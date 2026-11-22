@@ -1,0 +1,367 @@
+/* ZOD returns helper */
+.zod-wrap { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-inline-start: 8px; vertical-align: middle; }
+
+a.zod-pill {
+  display: inline-block;
+  padding: 1px 8px;
+  border: 1px solid #c62828;
+  border-radius: 10px;
+  background: #fdecea;
+  color: #b71c1c !important;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 16px;
+  direction: rtl;
+  white-space: nowrap;
+  text-decoration: none !important;
+  cursor: pointer;
+}
+a.zod-pill:hover { background: #c62828; color: #fff !important; }
+a.zod-pill.zod-pill-inv { border-color: #1565c0; background: #e3f0fc; color: #0d47a1 !important; }
+a.zod-pill.zod-pill-inv:hover { background: #1565c0; color: #fff !important; }
+
+.zod-tag {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: default;
+}
+.zod-tag.zod-full { background: #c62828; color: #fff; border: 1px solid #c62828; }
+.zod-tag.zod-warn { background: #fff3e0; color: #e65100; border: 1px solid #ef6c00; }
+
+.zod-chip {
+  display: inline-block;
+  margin: 0 0 6px;
+  padding: 2px 10px;
+  border: 1px solid #cfd8dc;
+  border-radius: 12px;
+  background: #f5f7f8;
+  color: #546e7a;
+  font-size: 11px;
+  cursor: pointer;
+  user-select: none;
+}
+.zod-chip:hover { background: #e3f0fc; border-color: #90caf9; color: #0d47a1; }
+.zod-chip.zod-chip-err { background: #fdecea; border-color: #ef9a9a; color: #b71c1c; }
+
+.zod-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  direction: rtl;
+}
+.zod-banner-red { background: #fdecea; border: 1px solid #ef9a9a; color: #8e0000; }
+.zod-banner-warn { background: #fff3e0; border: 1px solid #ffb74d; color: #8a3b00; }
+.zod-banner-info { background: #eef5fc; border: 1px solid #bbdefb; color: #0d3c78; }
+.zod-banner .zod-sep { color: #999; }
+
+/* ---------- v3: speed helpers ---------- */
+.zod-toast {
+  position: fixed; left: 50%; bottom: 70px; transform: translateX(-50%) translateY(20px);
+  z-index: 2147483600; max-width: 90vw; padding: 8px 16px; border-radius: 8px;
+  background: #263238; color: #fff; font-size: 13px; direction: rtl;
+  box-shadow: 0 4px 14px rgba(0,0,0,.25); opacity: 0; pointer-events: none;
+  transition: opacity .18s, transform .18s;
+}
+.zod-toast.zod-toast-show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.zod-toast.zod-toast-ok { background: #1b5e20; }
+
+.zod-fab {
+  position: fixed; left: 14px; bottom: 34px; z-index: 99990;
+  width: 38px; height: 38px; border-radius: 50%; border: 1px solid #1565c0;
+  background: #fff; color: #1565c0; font-size: 20px; line-height: 34px; text-align: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,.2); cursor: pointer; padding: 0;
+}
+.zod-fab:hover { background: #1565c0; color: #fff; }
+
+
+/* ---------- v3.2: label at the top left ---------- */
+.zod-badge {
+  position: fixed; left: 15px; top: 2px; z-index: 1000; padding: 0 6px; margin: 0;
+  border: 0; border-radius: 3px; background: transparent; color: #78909c;
+  font: 10px/14px Arial, sans-serif; letter-spacing: .2px; cursor: pointer; white-space: nowrap;
+}
+.zod-badge:hover { background: #eef5fc; color: #1565c0; }
+@media print { .zod-badge, .zod-fab, .zod-jump { display: none !important; } }
+
+/* ---------- v3.3.9: customer search (F8) and its button, next to the quick search button ---------- */
+.zod-fab.zod-fab-cust { left: 60px; display: flex; align-items: center; justify-content: center; border-color: #2e7d32; color: #2e7d32; }
+.zod-fab.zod-fab-cust:hover { background: #2e7d32; color: #fff; }
+.zod-fabicon { display: block; width: 19px; height: 19px; }
+.zod-cpan .zod-jhead { background: linear-gradient(135deg, #1b5e20, #388e3c); }
+.zod-cpan .zod-jsub { color: #d7f0d9; }
+.zod-cpan .zod-jinput:focus { border-color: #2e7d32; box-shadow: 0 0 0 3px rgba(46, 125, 50, .15); }
+.zod-cpan .zod-jfield:focus-within .zod-jglass { color: #2e7d32; }
+.zod-cpan .zod-jrow:focus { border-color: #2e7d32; background: #f3faf3; box-shadow: 0 0 0 3px rgba(46, 125, 50, .15); }
+.zod-cpan .zod-jrow:hover, .zod-cpan .zod-jrow.zod-jfirst { border-color: #a5d6a7; background: #f3faf3; }
+.zod-cpan .zod-jno { color: #1b5e20; }
+.zod-jcard { padding: 1px 9px; border-color: #b0bec5; background: #fff; color: #546e7a; font-weight: normal; }
+.zod-jcard:hover, .zod-jcard:focus { border-color: #546e7a; background: #546e7a; color: #fff; }
+.zod-cfoot { display: flex; flex-wrap: wrap; gap: 0 14px; }
+.zod-jrow.zod-jgo { border-style: dashed; border-color: #a5d6a7; color: #1b5e20; }
+.zod-jgotext { flex: 1 1 auto; min-width: 0; font-weight: bold; }
+.zod-jgokey {
+  padding: 0 5px; border: 1px solid #cfd8dc; border-bottom-width: 2px; border-radius: 4px; background: #fff;
+  font-family: inherit; font-size: 11px; line-height: 15px; color: #37474f;
+}
+
+/* ---------- v3.3: returns from an invoice ---------- */
+a.zod-pill.zod-pill-ret { border-color: #00897b; background: #e0f2f1; color: #00695c !important; }
+a.zod-pill.zod-pill-ret:hover { background: #00897b; color: #fff !important; }
+.zod-rettools { display: inline-flex; gap: 6px; align-items: center; margin-inline-start: 6px; vertical-align: top; }
+.btn.zod-retbtn { background: #00897b; border-color: #00796b; color: #fff; }
+.btn.zod-retbtn:hover, .btn.zod-retbtn:focus { background: #00695c; color: #fff; }
+
+/* ---------- v3.3.1: add-on links point to "#" (see linkLike in fast.js / zod.js) ---------- */
+a.zod-pill:focus-visible, .zod-jclear:focus-visible { outline: 2px solid #90caf9; outline-offset: 1px; }
+
+/* ---------- quick search (Ctrl+K) · v3.3.4 design ---------- */
+.zod-jump {
+  position: fixed; left: 14px; bottom: 80px; z-index: 99995; width: 470px; max-width: calc(100vw - 28px);
+  max-height: calc(100vh - 100px); box-sizing: border-box; display: none; flex-direction: column; overflow: hidden; padding: 0; margin: 0;
+  background: #fff; border: 1px solid #d3dce3; border-radius: 12px; direction: rtl; text-align: right;
+  box-shadow: 0 16px 44px rgba(13, 40, 80, .28), 0 2px 6px rgba(0, 0, 0, .08);
+  font-size: 13px; line-height: 1.45; color: #263238;
+}
+.zod-jump.zod-jopen { display: flex; animation: zodjin .14s ease-out; }
+@keyframes zodjin { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.zod-jump button { font-family: inherit; }
+
+.zod-jhead {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px; margin: 0; padding: 9px 12px;
+  background: linear-gradient(135deg, #0d47a1, #1976d2); color: #fff;
+}
+.zod-jtitle { font-weight: bold; font-size: 14px; }
+.zod-jsub { color: #cfe3fb; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zod-jclose {
+  margin-inline-start: auto; flex: 0 0 auto; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%;
+  background: rgba(255, 255, 255, .14); color: #fff; font-size: 17px; line-height: 23px; cursor: pointer;
+}
+.zod-jclose:hover, .zod-jclose:focus { background: rgba(255, 255, 255, .3); outline: none; }
+
+.zod-jbody { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 10px 12px 4px; }
+.zod-jfield { flex: 0 0 auto; position: relative; }
+.zod-jglass {
+  position: absolute; right: 11px; top: 50%; width: 17px; height: 17px; margin-top: -8.5px;
+  color: #90a4ae; pointer-events: none;
+}
+.zod-jinput {
+  display: block; width: 100%; height: 40px; box-sizing: border-box; margin: 0; padding: 0 36px;
+  border: 1.5px solid #c5dbef; border-radius: 9px; background: #f6f9fc; color: #1c2b33;
+  font-size: 15px; text-align: start; outline: none; box-shadow: none;
+  transition: border-color .12s, box-shadow .12s, background .12s;
+}
+.zod-jinput::placeholder { color: #9aabb6; font-size: 13px; }
+.zod-jinput:focus { border-color: #1976d2; background: #fff; box-shadow: 0 0 0 3px rgba(25, 118, 210, .15); }
+.zod-jfield:focus-within .zod-jglass { color: #1976d2; }
+.zod-jx {
+  position: absolute; left: 9px; top: 50%; width: 22px; height: 22px; margin-top: -11px; padding: 0; border: 0;
+  border-radius: 50%; background: #e3e9ee; color: #546e7a; font-size: 15px; line-height: 22px; cursor: pointer; display: none;
+}
+.zod-jfield.zod-jfilled .zod-jx { display: block; }
+.zod-jx:hover, .zod-jx:focus { background: #cfd8dc; color: #263238; outline: none; }
+
+.zod-jhint { flex: 0 0 auto; margin: 8px 2px 2px; color: #78909c; font-size: 11.5px; line-height: 1.7; }
+.zod-jhint b { color: #546e7a; }
+.zod-jump.zod-jhasres .zod-jhint { display: none; }
+.zod-jstatus { flex: 0 0 auto; min-height: 0; margin: 7px 2px 0; color: #546e7a; font-size: 12px; }
+.zod-jstatus:empty { display: none; }
+.zod-jstatus.zod-jbusy::before, .zod-iload::before {
+  content: ''; display: inline-block; width: 10px; height: 10px; margin-inline-end: 6px; vertical-align: -1px;
+  border: 2px solid #c5dbef; border-top-color: #1976d2; border-radius: 50%; animation: zodspin .7s linear infinite;
+}
+@keyframes zodspin { to { transform: rotate(360deg); } }
+
+.zod-jscroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 4px -12px 0; padding: 0 12px 8px; }
+.zod-jsec { display: flex; align-items: center; gap: 8px; margin: 8px 2px 6px; color: #546e7a; font-size: 11.5px; font-weight: bold; }
+.zod-jsec small { color: #90a4ae; font-size: 11px; font-weight: normal; }
+.zod-jsec::after { content: ''; flex: 1 1 auto; border-top: 1px solid #e6ecf0; }
+.zod-jlist, .zod-ilist { display: flex; flex-direction: column; gap: 6px; max-height: none; overflow: visible; margin: 0; }
+
+.zod-jrow, .zod-irow {
+  border: 1px solid #e1e8ed; border-radius: 9px; background: #fff; cursor: pointer; outline: none;
+  transition: border-color .1s, background .1s, box-shadow .1s;
+}
+.zod-jrow:hover, .zod-irow:hover { border-color: #90caf9; background: #f6faff; }
+.zod-jrow:focus, .zod-irow:focus { border-color: #1976d2; background: #f6faff; box-shadow: 0 0 0 3px rgba(25, 118, 210, .15); }
+
+/* documents */
+.zod-jrow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 8px 10px; font-size: 12px; }
+.zod-jrow.zod-jfirst { border-color: #90caf9; background: #f6faff; }
+.zod-jtype { padding: 1px 8px; border-radius: 9px; background: #e3f2fd; color: #0d47a1; font-size: 11px; font-weight: bold; line-height: 17px; }
+.zod-jtype.zod-jt-sr { background: #fff3e0; color: #e65100; }
+.zod-jtype.zod-jt-pi { background: #ede7f6; color: #4527a0; }
+.zod-jtype.zod-jt-pr { background: #fce4ec; color: #ad1457; }
+.zod-jno { font-weight: bold; color: #0d47a1; font-size: 14px; }
+.zod-jmeta { width: 100%; color: #607d8b; font-size: 11.5px; }
+.zod-jact {
+  margin-inline-start: auto; padding: 2px 10px; border: 1px solid #00897b; border-radius: 10px;
+  background: #e0f2f1; color: #00695c; font-size: 11px; font-weight: bold; line-height: 16px; cursor: pointer;
+}
+.zod-jact:hover, .zod-jact:focus { background: #00897b; color: #fff; outline: none; }
+.zod-jfull {
+  margin-inline-start: auto; padding: 2px 9px; border-radius: 10px; background: #c62828; color: #fff;
+  font-size: 11px; font-weight: bold; line-height: 16px;
+}
+
+/* items: name and code on the right, price and cost on the left, stock below */
+.zod-irow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; padding: 9px 11px; font-size: 12px; }
+.zod-imain { min-width: 0; }
+.zod-iname { color: #1c2b33; font-size: 13px; font-weight: bold; line-height: 1.4; }
+.zod-isub { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.zod-icode {
+  padding: 0 7px; border-radius: 5px; background: #eef4fb; color: #0d47a1;
+  font: bold 12px/18px Consolas, 'Courier New', monospace; letter-spacing: .3px;
+}
+.zod-icopy {
+  padding: 0 8px; border: 1px solid #d5dee5; border-radius: 9px; background: #fff; color: #607d8b;
+  font-size: 10.5px; line-height: 17px; cursor: pointer;
+}
+.zod-icopy:hover, .zod-icopy:focus { border-color: #1976d2; color: #1976d2; outline: none; }
+.zod-iprice { align-self: start; min-width: 92px; padding-inline-start: 12px; border-inline-start: 1px solid #edf1f4; text-align: left; white-space: nowrap; }
+.zod-ilabel { color: #90a4ae; font-size: 10.5px; line-height: 1.3; }
+.zod-iretail { color: #2e7d32; font-size: 19px; font-weight: bold; line-height: 1.2; }
+.zod-icost { margin-top: 2px; color: #78909c; font-size: 11.5px; }
+.zod-icost b { color: #455a64; }
+.zod-iprice.zod-ibelow .zod-iretail, .zod-iprice.zod-ibelow .zod-icost b { color: #c62828; }
+.zod-iwarn { margin-top: 2px; color: #c62828; font-size: 10.5px; font-weight: bold; }
+.zod-istock { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding-top: 7px; border-top: 1px dashed #e3e9ee; }
+.zod-wh { padding: 0 7px; border-radius: 9px; background: #e8f5e9; color: #2e7d32; line-height: 19px; font-size: 11.5px; }
+.zod-wh b { color: #1b5e20; }
+.zod-wh.zod-wh0 { background: #f3f5f6; color: #a3b1ba; }
+.zod-wh.zod-wh0 b { color: #a3b1ba; font-weight: normal; }
+.zod-wh.zod-whneg { background: #ffebee; color: #c62828; }
+.zod-wh.zod-whneg b { color: #c62828; }
+.zod-whsum { margin-inline-start: auto; padding: 0 2px; color: #263238; font-weight: bold; line-height: 19px; font-size: 12px; }
+.zod-iwait { color: #78909c; font-size: 11.5px; }
+.zod-imore { margin-top: 2px; color: #78909c; font-size: 11px; text-align: center; }
+
+/* keyboard shortcuts, folded away at the bottom */
+.zod-jhelp { flex: 0 0 auto; margin: 0; padding: 6px 12px 7px; border-top: 1px solid #eceff1; background: #fafbfc; color: #546e7a; font-size: 11px; line-height: 20px; }
+.zod-jhelp summary { cursor: pointer; color: #607d8b; list-style: none; outline: none; }
+.zod-jhelp summary::-webkit-details-marker { display: none; }
+.zod-jhelp summary::before { content: '▸'; display: inline-block; width: 12px; color: #90a4ae; }
+.zod-jhelp[open] summary::before { content: '▾'; }
+.zod-jhelp summary:hover, .zod-jhelp summary:focus-visible { color: #1565c0; }
+.zod-jhelp[open] summary { margin-bottom: 3px; }
+.zod-jhelp kbd {
+  display: inline-block; min-width: 22px; padding: 0 5px; border: 1px solid #cfd8dc; border-bottom-width: 2px;
+  border-radius: 4px; background: #fff; font-family: inherit; font-size: 11px; line-height: 15px; color: #37474f; text-align: center;
+}
+.zod-jclear { display: inline-block; margin-top: 4px; color: #1565c0 !important; font-size: 11px; }
+
+/* customers in SMACC's customer box (main.js + cust.js): name, code, mobile, VAT, CR */
+.ui-autocomplete.zod-cmenu {
+  width: 520px !important; max-width: calc(100vw - 16px) !important; max-height: 62vh; overflow-y: auto; overflow-x: hidden;
+  padding: 3px 0 !important; direction: rtl; text-align: right; background: #fff;
+}
+.ui-autocomplete.zod-cmenu > li.zod-cli { padding: 0 !important; margin: 0 !important; list-style: none; }
+.ui-autocomplete.zod-cmenu > li.zod-cli > a {
+  display: block; margin: 0 !important; padding: 5px 10px !important; border: 0 !important; border-bottom: 1px solid #eef2f5 !important;
+  border-radius: 0 !important; background: #fff; color: #1c2b33; white-space: normal; line-height: 1.35; cursor: pointer;
+}
+.ui-autocomplete.zod-cmenu > li.zod-cli > a.ui-state-focus,
+.ui-autocomplete.zod-cmenu > li.zod-cli > a.ui-state-hover,
+.ui-autocomplete.zod-cmenu > li.zod-cli > a:hover { background: #e3f0fc !important; color: #1c2b33 !important; }
+.ui-autocomplete.zod-cmenu > li.zod-cmore { padding: 5px 10px; color: #90a4ae; font-size: 11px; list-style: none; text-align: center; }
+.zod-crow { display: block; }
+.zod-ctop { display: flex; align-items: center; gap: 8px; }
+.zod-cname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: bold; color: #1c2b33; }
+.zod-ccode { flex: 0 0 auto; padding: 0 7px; border-radius: 8px; background: #eef4fb; color: #0d47a1; font-size: 12px; font-weight: bold; line-height: 18px; }
+.zod-cdup { flex: 0 0 auto; padding: 0 7px; border-radius: 8px; background: #c62828; color: #fff; font-size: 10.5px; font-weight: bold; line-height: 17px; cursor: help; }
+.zod-cstop { flex: 0 0 auto; padding: 0 7px; border-radius: 8px; background: #78909c; color: #fff; font-size: 10.5px; line-height: 17px; }
+.zod-cmeta { display: flex; flex-wrap: wrap; gap: 1px 12px; margin-top: 2px; color: #78909c; font-size: 11.5px; }
+.zod-cmeta bdi, .zod-jcust .zod-jmeta bdi { color: #37474f; }
+.zod-cduptext { width: 100%; color: #c62828; font-size: 11px; }
+.zod-chit, .zod-chit bdi { color: #1b5e20 !important; font-weight: bold; }
+.zod-ccode.zod-chit { background: #e8f5e9; }
+
+/* customers in the quick search (Ctrl+K) */
+.zod-jtype.zod-jt-cu { background: #e8f5e9; color: #1b5e20; }
+.zod-jcname { flex: 1 1 auto; min-width: 0; color: #1c2b33; font-size: 13px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zod-jcust .zod-jmeta { display: flex; flex-wrap: wrap; gap: 1px 12px; }
+
+/* duplicate warnings in the customer forms */
+.zod-dupwarn { clear: both; margin: 2px 0 5px; color: #b71c1c; font-size: 12px; font-weight: bold; line-height: 1.5; text-align: right; }
+.zod-dupwarn a.zod-dupcode { margin: 0 2px; color: #b71c1c !important; text-decoration: underline; }
+input.zod-dupfield, input.zod-dupfield:focus { border-color: #e53935 !important; box-shadow: 0 0 0 2px rgba(229, 57, 53, .18) !important; }
+
+/* ---------- documents list search box, "اسم العميل": the matching customers (cust.js) ---------- */
+.zod-lbox {
+  position: fixed; z-index: 1060; display: none; box-sizing: border-box; max-height: 60vh; overflow-y: auto;
+  padding: 4px 0; background: #fff; border: 1px solid #b0c4d8; border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(13, 71, 161, .18); text-align: right; font-size: 13px; line-height: 1.45;
+}
+.zod-lhead { padding: 4px 12px 6px; border-bottom: 1px solid #eef2f6; color: #0d47a1; font-size: 11.5px; font-weight: bold; }
+.zod-lrow { padding: 6px 12px; border-bottom: 1px solid #f1f4f7; cursor: pointer; }
+.zod-lrow:last-child { border-bottom: 0; }
+.zod-lrow.zod-lon { background: #e3f0fc; }
+.zod-lnote { padding: 6px 12px; color: #78909c; font-size: 11.5px; }
+
+/* ---------- v3.3.12: animated "made by" label ---------- */
+/* z-index above SMACC's windows (bootstrap backdrop 1040, modal 1050): the label can be clicked any time */
+.zod-badge { display: inline-flex; align-items: center; gap: 3px; z-index: 1065; transition: background .15s; }
+.zod-badge .zod-btext { display: inline-flex; }
+.zod-badge .zod-bch { display: inline-block; animation: zod-wave 3.2s ease-in-out infinite; }
+.zod-badge .zod-bver { margin-left: 2px; opacity: .85; }
+@keyframes zod-wave {
+  0%, 34%, 100% { transform: translateY(0); color: #78909c; }
+  12% { transform: translateY(-2px); color: #f70e0c; }
+  22% { transform: translateY(0); color: #1565c0; }
+}
+@keyframes zod-wave-c { 0%, 34%, 100% { color: #78909c; } 12% { color: #f70e0c; } 22% { color: #1565c0; } }
+@media (prefers-reduced-motion: reduce) {
+  .zod-badge .zod-bch { animation-name: zod-wave-c; }
+}
+
+/* ---------- v3.3.17: sales invoice drafts (bar in the header, left of the SMACC logo) ---------- */
+/* z-index above SMACC's windows (backdrop 1040, modal 1050), like the label: usable while the item window is open */
+.zod-drafts {
+  position: fixed; top: 5px; right: 118px; z-index: 1065; box-sizing: border-box;
+  display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 660px);
+  direction: rtl; font: 12px/1.2 Tahoma, Arial, sans-serif;
+}
+.zod-drafts.zod-dhide { display: none; }
+.zod-dchip {
+  display: inline-flex; align-items: center; gap: 6px; flex: 0 1 auto; min-width: 0; max-width: 230px;
+  height: 28px; margin: 0; padding: 0 8px 0 10px; box-sizing: border-box;
+  border: 1px solid #90caf9; border-radius: 15px; background: #fff; color: #0d47a1;
+  font: inherit; white-space: nowrap; cursor: pointer; box-shadow: 0 1px 4px rgba(13, 71, 161, .12);
+}
+.zod-dchip:hover { background: #e3f2fd; }
+.zod-dchip.zod-don { background: #1565c0; border-color: #1565c0; color: #fff; cursor: default; }
+.zod-dnum {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 18px; height: 18px; border-radius: 50%; background: #1565c0; color: #fff; font-size: 11px; font-weight: bold;
+}
+.zod-don .zod-dnum { background: #fff; color: #1565c0; }
+.zod-dname { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: bold; }
+.zod-dsub { flex: none; opacity: .85; font-size: 11px; }
+.zod-dplus {
+  flex: none; height: 28px; min-width: 28px; margin: 0; padding: 0 9px; box-sizing: border-box;
+  border: 1px solid #ef6c00; border-radius: 15px; background: #fff; color: #ef6c00;
+  font: bold 16px/26px Tahoma, Arial, sans-serif; white-space: nowrap; cursor: pointer; box-shadow: 0 1px 4px rgba(0, 0, 0, .15);
+}
+.zod-dplus.zod-dplus-wide { font-size: 12.5px; }
+.zod-dplus:hover { background: #ef6c00; color: #fff; }
+.zod-dsaved {
+  position: fixed; top: 50px; left: 50%; transform: translateX(-50%); z-index: 2147483600;
+  display: flex; align-items: center; gap: 12px; max-width: 90vw; padding: 10px 16px; border-radius: 8px;
+  background: #1b5e20; color: #fff; font: 13.5px/1.4 Tahoma, Arial, sans-serif; direction: rtl;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, .3);
+}
+.zod-dkeep {
+  flex: none; margin: 0; padding: 4px 10px; border: 1px solid #fff; border-radius: 5px;
+  background: transparent; color: #fff; font: inherit; cursor: pointer;
+}
+.zod-dkeep:hover { background: #fff; color: #1b5e20; }
+@media print { .zod-drafts, .zod-dsaved { display: none !important; } }

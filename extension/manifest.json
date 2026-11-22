@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "ZOD - أدوات SMACC",
+  "short_name": "ZOD SMACC",
+  "version": "3.3.17",
+  "description": "مرتجعات بجانب الفواتير وزر إرجاع كامل أو جزئي، تحميل أسرع، اختصارات، تعبئة تلقائية، بحث سريع وسعر الصنف وتكلفته ومخزونه في كل فرع، نسخ الأصناف وصنف جديد وتحويل مخزون من داخل الفاتورة، بحث العملاء بالاسم والجوال والرقم الضريبي والسجل التجاري وتنبيه التكرار وفاتورة للعميل مباشرة (F8)، فاتورة جديدة بعد الدخول، مسودات فواتير مبيعات في تبويبات (زر +)، وإبقاء الدخول في SMACC. made by younis_albaloushy",
+  "permissions": ["storage"],
+  "background": { "service_worker": "bg.js" },
+  "commands": {
+    "hide": { "suggested_key": { "default": "Alt+Q" }, "description": "إخفاء النافذة الثانية" }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://*.smacc.com/*"],
+      "js": ["main.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": ["https://*.smacc.com/*"],
+      "js": ["fast.js"],
+      "css": ["style.css"],
+      "run_at": "document_start"
+    },
+    {
+      "matches": ["https://*.smacc.com/*"],
+      "js": ["cust.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.smacc.com/Inventory/PurchaseInvoicePage.aspx*",
+        "https://*.smacc.com/Inventory/PurchaseReturnPage.aspx*",
+        "https://*.smacc.com/Inventory/SalesInvoicePage.aspx*",
+        "https://*.smacc.com/Inventory/SalesReturnPage.aspx*",
+        "https://*.smacc.com/inventory/*"
+      ],
+      "js": ["zod.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.smacc.com/Inventory/ItemCardMasterPage.aspx*",
+        "https://*.smacc.com/Inventory/SalesInvoicePage.aspx*",
+        "https://*.smacc.com/Inventory/PurchaseInvoicePage.aspx*",
+        "https://*.smacc.com/inventory/*"
+      ],
+      "js": ["tools.js"],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    }
+  ],
+  "icons": { "16": "icon16.png", "32": "icon32.png", "48": "icon48.png", "128": "icon128.png" }
+}

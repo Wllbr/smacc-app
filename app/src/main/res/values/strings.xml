@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ZOD SMACC</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_new">New</string>
+    <string name="nav_search">Search</string>
+    <string name="nav_customers">Customers</string>
+    <string name="nav_more">More</string>
+    <string name="shortcuts">Shortcuts</string>
+    <string name="find_on_page">Find on page</string>
+    <string name="refresh">Refresh</string>
+    <string name="desktop_site">Desktop site</string>
+    <string name="set_home">Make this page Home</string>
+    <string name="open_browser">Open in browser</string>
+    <string name="home_set">This page is now Home</string>
+    <string name="pin_page">＋ Pin this page</string>
+    <string name="shortcuts_empty">Open a SMACC screen you use often, then tap Pin. Pinned pages also show when you long-press the app icon.</string>
+    <string name="shortcuts_hint">Long-press a shortcut to rename, delete or add it to your home screen.</string>
+    <string name="name_shortcut">Shortcut name</string>
+    <string name="pinned">Pinned</string>
+    <string name="rename">Rename</string>
+    <string name="delete">Delete</string>
+    <string name="add_home_screen">Add to home screen</string>
+    <string name="save">Save</string>
+    <string name="cancel">Cancel</string>
+    <string name="close">Close</string>
+    <string name="previous">Previous</string>
+    <string name="next">Next</string>
+    <string name="find_hint">Find on this page</string>
+    <string name="not_ready">Open a SMACC page first (log in), then try again</string>
+    <string name="downloading">Downloading %1$s</string>
+    <string name="download_failed">The download did not start</string>
+    <string name="download_unsupported">This file can\'t be downloaded here. Try Print → Save as PDF.</string>
+    <string name="cant_open">No app can open this link</string>
+    <string name="tab_title">Page %1$d · %2$s</string>
+</resources>

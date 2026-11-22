@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="nav_home">الرئيسية</string>
+    <string name="nav_new">جديد</string>
+    <string name="nav_search">بحث</string>
+    <string name="nav_customers">العملاء</string>
+    <string name="nav_more">المزيد</string>
+    <string name="shortcuts">الاختصارات</string>
+    <string name="find_on_page">بحث في الصفحة</string>
+    <string name="refresh">تحديث</string>
+    <string name="desktop_site">نسخة الكمبيوتر</string>
+    <string name="set_home">اجعل هذه الصفحة الرئيسية</string>
+    <string name="open_browser">فتح في المتصفح</string>
+    <string name="home_set">أصبحت هذه الصفحة الرئيسية</string>
+    <string name="pin_page">＋ تثبيت هذه الصفحة</string>
+    <string name="shortcuts_empty">افتح شاشة تستخدمها كثيراً في SMACC ثم اضغط تثبيت. تظهر الصفحات المثبتة أيضاً عند الضغط المطوّل على أيقونة التطبيق.</string>
+    <string name="shortcuts_hint">اضغط مطوّلاً على الاختصار لإعادة تسميته أو حذفه أو إضافته للشاشة الرئيسية.</string>
+    <string name="name_shortcut">اسم الاختصار</string>
+    <string name="pinned">تم التثبيت</string>
+    <string name="rename">إعادة تسمية</string>
+    <string name="delete">حذف</string>
+    <string name="add_home_screen">إضافة للشاشة الرئيسية</string>
+    <string name="save">حفظ</string>
+    <string name="cancel">إلغاء</string>
+    <string name="close">إغلاق</string>
+    <string name="previous">السابق</string>
+    <string name="next">التالي</string>
+    <string name="find_hint">ابحث في هذه الصفحة</string>
+    <string name="not_ready">افتح صفحة SMACC أولاً (سجّل الدخول) ثم حاول مرة أخرى</string>
+    <string name="downloading">جارٍ تحميل %1$s</string>
+    <string name="download_failed">لم يبدأ التحميل</string>
+    <string name="download_unsupported">لا يمكن تحميل هذا الملف هنا. جرّب طباعة ← حفظ PDF.</string>
+    <string name="cant_open">لا يوجد تطبيق يفتح هذا الرابط</string>
+    <string name="tab_title">صفحة %1$d · %2$s</string>
+</resources>

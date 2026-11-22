@@ -1,0 +1,16 @@
+/* Phone-only styles on top of the extension's style.css */
+
+/* the app's bottom bar replaces the round buttons; drafts in tabs are desktop-only */
+.zod-fab, .zod-drafts, .zod-dsaved { display: none !important; }
+
+@media (max-width: 820px) {
+  /* quick search and customer search: a bottom sheet across the whole width */
+  .zod-jump {
+    left: 0 !important; right: 0 !important; bottom: 0 !important; top: auto !important;
+    width: 100% !important; max-width: 100% !important; max-height: 88vh !important;
+    border-radius: 16px 16px 0 0 !important; font-size: 15px !important;
+  }
+  .zod-jump input, .zod-jump select, .zod-jump textarea { font-size: 16px !important; }
+  .zod-jump button { min-height: 36px; }
+  .zod-toast { max-width: 94vw !important; font-size: 14px !important; }
+}
