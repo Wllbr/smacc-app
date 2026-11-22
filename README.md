@@ -4,6 +4,12 @@ SMACC on your phone with the ZOD extension built in: quick search (price, cost, 
 customer search by name / mobile / VAT / CR with a new invoice for the customer, returns next to
 invoices, item tools, faster pages and staying logged in.
 
+## The app's own screens
+The app opens on its own screens (`app/src/main/assets/app/`): home with today's totals, sales invoices,
+returns, quotations, purchases, stock transfers, items (price, cost, stock per branch), customers, a sales
+report and settings (language, colour, dark mode, text size, automatic sign-in). They read from SMACC with
+your login and never save anything. Creating a document opens SMACC's own screen with the ZOD extension.
+
 ## Install
 1. Open **Releases** → latest build → download `ZOD-SMACC.apk` on your phone.
 2. Open it and allow "install unknown apps" for your browser when Android asks.

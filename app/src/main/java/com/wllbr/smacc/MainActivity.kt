@@ -22,6 +22,7 @@ import android.webkit.URLUtil
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -39,6 +40,8 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKeys
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.google.android.material.bottomnavigation.BottomNavigationView
@@ -107,7 +110,7 @@ class MainActivity : AppCompatActivity() {
 
         val start = intent?.getStringExtra(EXTRA_URL)
         val restored = savedInstanceState != null && start == null && root.restoreState(savedInstanceState) != null
-        if (!restored) root.loadUrl(start ?: homeUrl())
+        if (!restored) root.loadUrl(start ?: appUrl())
         updateLauncherShortcuts(loadShortcuts())
     }
 
@@ -141,6 +144,71 @@ class MainActivity : AppCompatActivity() {
     // ---------------------------------------------------------------- web views
 
     private fun homeUrl() = prefs.getString("home", null) ?: DEFAULT_HOME
+
+    /** The app's own screens (assets/app), served on the SMACC address so they can call SMACC. */
+    private fun appUrl() = originOf(homeUrl()) + "/zod-app/index.html"
+
+    private fun isApp(url: String?): Boolean = isSmacc(url) && (Uri.parse(url).path ?: "").startsWith("/zod-app/")
+
+    private fun isLoginUrl(url: String?): Boolean = isSmacc(url) && (Uri.parse(url).path ?: "").contains("login", ignoreCase = true)
+
+    private fun goApp() {
+        while (webs.size > 1) closeWeb(cur)
+        cur.loadUrl(appUrl())
+    }
+
+    // ---- saved login (auto sign-in): encrypted on the phone, only ever typed into SMACC's login page
+    private val secure by lazy {
+        try {
+            EncryptedSharedPreferences.create(
+                "zod_login", MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC), this,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (e: Exception) { null }
+    }
+    @Volatile private var expectLogin = false
+    private var pendingLogin: Pair<String, String>? = null
+    private var lastAutoFill = 0L
+
+    private fun autoMode(): String = prefs.getString("autologin", "") ?: ""
+    private fun hasSavedLogin(): Boolean = try { secure?.contains("u") == true } catch (e: Exception) { false }
+
+    private fun saveLogin(l: Pair<String, String>) {
+        try { secure?.edit()?.putString("u", l.first)?.putString("p", l.second)?.apply() } catch (e: Exception) { /* not saved */ }
+    }
+
+    private fun onLoginPage(w: WebView) {
+        if (!isLoginUrl(w.url) || autoMode() != "on") return
+        val s = secure ?: return
+        val u = s.getString("u", null) ?: return
+        val p = s.getString("p", null) ?: return
+        val now = System.currentTimeMillis()
+        if (now - lastAutoFill < 25_000) { toast(getString(R.string.auto_failed)); return }   // it came back: wrong login?
+        lastAutoFill = now
+        w.evaluateJavascript("window.__zodFill&&window.__zodFill(${JSONObject.quote(u)},${JSONObject.quote(p)})", null)
+    }
+
+    /** A SMACC screen opened right after the login page: signed in. */
+    private fun onSignedIn(view: WebView) {
+        val l = pendingLogin
+        pendingLogin = null
+        if (l != null) {
+            when (autoMode()) {
+                "on" -> saveLogin(l)
+                "" -> AlertDialog.Builder(this)
+                    .setTitle(R.string.auto_title)
+                    .setMessage(R.string.auto_ask)
+                    .setPositiveButton(R.string.yes) { _, _ -> prefs.edit().putString("autologin", "on").apply(); saveLogin(l) }
+                    .setNegativeButton(R.string.no) { _, _ -> prefs.edit().putString("autologin", "off").apply() }
+                    .show()
+            }
+        }
+        if (expectLogin) {
+            expectLogin = false
+            view.post { if (webs.contains(view)) view.loadUrl(appUrl()) }
+        }
+    }
     private fun isDesktop() = prefs.getBoolean("desktop", false)
 
     private fun desktopUa(): String =
@@ -216,6 +284,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateBars() {
         if (webs.isEmpty()) return
         tabBar.isVisible = webs.size > 1
+        nav.isVisible = !isApp(cur.url)
         tabTitle.text = getString(R.string.tab_title, webs.size, cur.title ?: "")
         if (findBar.isVisible) closeFind()
     }
@@ -228,11 +297,44 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+            val u = request.url
+            val path = u.path ?: return null
+            if (request.method != "GET" || !isSmacc(u.toString()) || !path.startsWith("/zod-app/")) return null
+            val name = path.removePrefix("/zod-app/")
+            if (name.contains("..") || name.contains("/")) return null
+            val mime = when (name.substringAfterLast('.')) {
+                "html" -> "text/html"; "js" -> "text/javascript"; "css" -> "text/css"; else -> "application/octet-stream"
+            }
+            return try {
+                WebResourceResponse(mime, "utf-8", 200, "OK", mapOf("Cache-Control" to "no-store"), assets.open("app/$name"))
+            } catch (e: Exception) {
+                WebResourceResponse("text/plain", "utf-8", 404, "Not Found", emptyMap(), "".byteInputStream())
+            }
+        }
+
+        override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+            if (webs.isNotEmpty() && view === cur) updateBars()
+        }
+
+        override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+            if (webs.isNotEmpty() && view === cur) updateBars()
+        }
+
         override fun onPageFinished(view: WebView, url: String?) {
             // older WebView without document-start scripts: run the bundle once the page is there
             if (!docStart && isSmacc(url)) view.evaluateJavascript(bundle, null)
             CookieManager.getInstance().flush()
             if (webs.isNotEmpty() && view === cur) updateBars()
+            // back from the login page onto a SMACC screen with no password box: signed in
+            if (isSmacc(url) && !isApp(url) && !isLoginUrl(url) && (expectLogin || pendingLogin != null)) {
+                val p = (Uri.parse(url).path ?: "").lowercase()
+                if (p == "/default.aspx" || p == "/inventory/salesinvoicepage.aspx") {
+                    view.evaluateJavascript("(function(){var p=document.querySelector('input[type=password]');return p&&p.offsetParent!==null?1:0})()") { r ->
+                        if (r == "0" && webs.contains(view)) onSignedIn(view)
+                    }
+                }
+            }
         }
     }
 
@@ -281,6 +383,39 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun desktop(): Boolean = isDesktop()
+
+        // ---- the app's own screens and the login page (android.js)
+        @JavascriptInterface
+        fun expectLogin() { expectLogin = true }
+
+        @JavascriptInterface
+        fun loginPage() { runOnUiThread { if (webs.contains(w)) onLoginPage(w) } }
+
+        @JavascriptInterface
+        fun loginUsed(user: String, pass: String) {
+            runOnUiThread { if (webs.contains(w) && isLoginUrl(w.url) && autoMode() != "off") pendingLogin = user to pass }
+        }
+
+        @JavascriptInterface
+        fun autoLogin(): String = autoMode()
+
+        @JavascriptInterface
+        fun hasLogin(): Boolean = hasSavedLogin()
+
+        @JavascriptInterface
+        fun setAutoLogin(on: Boolean) {
+            prefs.edit().putString("autologin", if (on) "on" else "off").apply()
+            if (!on) forgetLogin()
+        }
+
+        @JavascriptInterface
+        fun forgetLogin() { try { secure?.edit()?.clear()?.apply() } catch (e: Exception) { /* nothing saved */ } }
+
+        @JavascriptInterface
+        fun setRecording(on: Boolean) { runOnUiThread { if (prefs.getBoolean("rec", false) != on) toggleRecording() } }
+
+        @JavascriptInterface
+        fun version(): String = try { packageManager.getPackageInfo(packageName, 0).versionName ?: "" } catch (e: Exception) { "" }
 
         @JavascriptInterface
         fun recording(): Boolean = prefs.getBoolean("rec", false)
@@ -373,7 +508,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun onNav(id: Int) {
         when (id) {
-            R.id.nav_home -> cur.loadUrl(homeUrl())
+            R.id.nav_home -> goApp()
             R.id.nav_new -> zod("newInvoice")
             R.id.nav_search -> zod("quick")
             R.id.nav_customers -> zod("cust")
@@ -427,9 +562,16 @@ class MainActivity : AppCompatActivity() {
             override fun handleOnBackPressed() {
                 if (findBar.isVisible) { closeFind(); return }
                 val w = cur
+                if (isApp(w.url)) {
+                    w.evaluateJavascript("(function(){return window.__appBack&&window.__appBack()?1:0})()") { r ->
+                        if (r != "1") moveTaskToBack(true)
+                    }
+                    return
+                }
                 w.evaluateJavascript("(function(){var a=window.__zodApp;return a&&a.closePanels()?1:0})()") { r ->
                     if (r == "1" || webs.isEmpty()) return@evaluateJavascript
                     when {
+                        webs.size == 1 && w.copyBackForwardList().let { h -> h.currentIndex > 0 && isLoginUrl(h.getItemAtIndex(h.currentIndex - 1).url) } -> goApp()
                         w.canGoBack() -> w.goBack()
                         webs.size > 1 -> closeWeb(w)
                         else -> moveTaskToBack(true)

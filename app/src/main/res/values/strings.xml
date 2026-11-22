@@ -36,4 +36,9 @@
     <string name="record">Record for Claude</string>
     <string name="rec_on">Recording is on. Do the steps in SMACC, then turn it off from More.</string>
     <string name="rec_saved">Saved in your Downloads folder as %1$s. Attach that file in the chat.</string>
+    <string name="auto_title">Sign in automatically?</string>
+    <string name="auto_ask">Save your SMACC login on this phone (encrypted) so the app signs in for you next time? You can turn this off in Settings.</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+    <string name="auto_failed">Automatic sign-in did not work. Sign in yourself.</string>
 </resources>
