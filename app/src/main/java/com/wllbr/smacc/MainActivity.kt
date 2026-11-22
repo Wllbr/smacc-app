@@ -281,6 +281,48 @@ class MainActivity : AppCompatActivity() {
 
         @JavascriptInterface
         fun desktop(): Boolean = isDesktop()
+
+        @JavascriptInterface
+        fun recording(): Boolean = prefs.getBoolean("rec", false)
+
+        @JavascriptInterface
+        fun log(line: String) {
+            if (!prefs.getBoolean("rec", false)) return
+            synchronized(recFile) {
+                if (recFile.length() < 30_000_000) recFile.appendText(line + "\n")
+            }
+        }
+    }
+
+    private val recFile by lazy { java.io.File(filesDir, "smacc-recording.txt") }
+
+    private fun toggleRecording() {
+        val on = !prefs.getBoolean("rec", false)
+        if (on) {
+            synchronized(recFile) { recFile.delete() }
+            prefs.edit().putBoolean("rec", true).apply()
+            webs.forEach { it.reload() }
+            toast(getString(R.string.rec_on))
+            return
+        }
+        prefs.edit().putBoolean("rec", false).apply()
+        try {
+            val name = "smacc-recording-" + System.currentTimeMillis() / 1000 + ".txt"
+            val values = android.content.ContentValues().apply {
+                put(android.provider.MediaStore.Downloads.DISPLAY_NAME, name)
+                put(android.provider.MediaStore.Downloads.MIME_TYPE, "text/plain")
+            }
+            val uri = contentResolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)!!
+            contentResolver.openOutputStream(uri)!!.use { out ->
+                synchronized(recFile) { if (recFile.exists()) recFile.inputStream().use { it.copyTo(out) } }
+            }
+            synchronized(recFile) { recFile.delete() }
+            AlertDialog.Builder(this).setMessage(getString(R.string.rec_saved, name))
+                .setPositiveButton(android.R.string.ok, null).show()
+        } catch (e: Exception) {
+            toast(getString(R.string.download_failed))
+        }
+        webs.forEach { it.reload() }
     }
 
     private fun printWeb(w: WebView) {
@@ -357,6 +399,7 @@ class MainActivity : AppCompatActivity() {
         pm.menu.add(0, 4, 3, R.string.desktop_site).apply { isCheckable = true; isChecked = isDesktop() }
         pm.menu.add(0, 5, 4, R.string.set_home)
         pm.menu.add(0, 6, 5, R.string.open_browser)
+        pm.menu.add(0, 7, 6, R.string.record).apply { isCheckable = true; isChecked = prefs.getBoolean("rec", false) }
         pm.setOnMenuItemClickListener {
             when (it.itemId) {
                 1 -> showShortcuts()
@@ -365,6 +408,7 @@ class MainActivity : AppCompatActivity() {
                 4 -> toggleDesktop()
                 5 -> cur.url?.let { u -> prefs.edit().putString("home", u).apply(); toast(getString(R.string.home_set)) }
                 6 -> cur.url?.let { u -> openExternal(u) }
+                7 -> toggleRecording()
             }
             true
         }

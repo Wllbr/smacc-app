@@ -32,4 +32,7 @@
     <string name="download_unsupported">لا يمكن تحميل هذا الملف هنا. جرّب طباعة ← حفظ PDF.</string>
     <string name="cant_open">لا يوجد تطبيق يفتح هذا الرابط</string>
     <string name="tab_title">صفحة %1$d · %2$s</string>
+    <string name="record">تسجيل لـ Claude</string>
+    <string name="rec_on">التسجيل يعمل. نفّذ الخطوات في SMACC ثم أوقفه من المزيد.</string>
+    <string name="rec_saved">حُفظ في مجلد التنزيلات باسم %1$s. أرفق هذا الملف في المحادثة.</string>
 </resources>
