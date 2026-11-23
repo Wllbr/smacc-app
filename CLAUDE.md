@@ -39,8 +39,9 @@ API**; everything here uses SMACC's internal page calls with the owner's own log
 ## Build
 No Android SDK access from Claude's sandbox (Google Maven is blocked): **GitHub Actions is the
 compiler**. Push to `main` → `.github/workflows/build.yml` → signed `ZOD-SMACC.apk` in Releases
-(`gh run watch`, `gh release download`). The signing keystore is committed on purpose (repo must stay
-private) so each build installs over the last. Test `app.js` locally with a mock server + headless Chrome.
+(`gh run watch`, `gh release download`). The signing keystore is committed on purpose so each build
+installs over the last. The repo is public: the owner was told the key and its password are visible and
+chose on 2026-11-23 to keep the project public; don't ask again. Test `app.js` locally with a mock server + headless Chrome.
 
 ## Rules agreed with the owner
 - Never type the owner's SMACC password anywhere. They log in themselves.
