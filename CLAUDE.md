@@ -27,8 +27,35 @@ API**; everything here uses SMACC's internal page calls with the owner's own log
   OTP modal → button to SMACC's own login page). "Sign in automatically" → `ZodAndroid.signedIn(u,p)`
   saves (encrypted); next time `ZodAndroid.autoFill()` hands it back only via `window.__appFill`.
   Tested on a mock (scratch, not committed) and the real Login.aspx structure; NOT on a phone, NOT a real login.
-- Still opening SMACC's own web screen (owner wants these replaced): creating or editing any document,
-  making a return, and the login page only for an SMS code / picture code.
+- Same branch, next commit (2026-11-23, owner: "I want to be able to create an invoice and returns and all
+  other through the app" + "the Print/PDF button just shows preparing and nothing happens"):
+  - **Print fix** (MainActivity `printHidden`): the old hidden WebView was never attached to a window, so
+    `View.post` never ran. Now a WebView is added to the view stack behind the app's page, polled every
+    second until PrintReport's `#HdivMain` has text (SMACC takes 40–60 s), or SMACC calls `window.print`
+    (`ZodPrint.print`), then `PrintManager.print`. Reports back via `window.__printState('ready'|'login'|'timeout')`.
+  - **Making documents** (`#/new/<si|sq|pi|st>[/<customer code>]`, `#/new/<sr|pr>[/<invoice no>]`,
+    app.js "making documents" + `assets/app/form.js`). The app's screen builds a draft (localStorage
+    `zodapp|draft|<kind>`); SMACC's own `<Page>.aspx` is opened in a hidden same-origin iframe
+    (`zod-app-form`) and driven like a person: header boxes `$(sel).val(v).blur()` / `.change()`, each item
+    through SMACC's item window (`#ItemCode` blur → `#Quantity`/`#Price`/`#DiscountAmount` → `.OkDialog`),
+    returns via `#InvoiceNumber` + `#btnSearchInvoice` + quantities / `#chkAllItem`. The review shows what
+    SMACC's page then holds (grid lines, totals, SMACC's messages). "Save in SMACC" clicks SMACC's own
+    `.btnSaveAddUpdate`; SMACC builds and sends CollectHeader/CollectGrid/posting/SaveRec itself. The app
+    only reads SaveRec's answer (`success||<no>`) and mirrors any SMACC modal as a question in the app.
+    Every step up to Save was run on the live pages on 23/11/2026 for all six kinds (test forms cancelled);
+    **Save itself has never been pressed from the app.** The UI was tested on the mock with a stand-in engine.
+  - Why this and not hand-built save calls: the owner's rule below forbids guessing SMACC's save calls;
+    here SMACC's own page makes them. The remaining risk is that SMACC's page behaves differently when
+    Save is pressed from a hidden frame (a question it asks via `confirm()` is answered "no", so it would
+    stop, not save). The first real save from the app should be done by the owner with Settings → "Record
+    for Claude" on, then checked in SMACC.
+  - SMACC refuses a return for an invoice whose ZatcaInvoiceStatus is not 1 or 3 (e.g. today's, -1) with
+    "لم يتم العثور على الفاتوره"; the app explains this.
+  - Lists used (exact SMACC calls): `AutoCompleteSearchCodeName` with `table` `INV_SalesmanNames`
+    (subSupport ''), `INV_WarehouseNames` (subSupport '0'), `INV_SuppliersNames` (key = btoa(encodeURIComponent
+    (text)) or '' for the first 20). Cash customer code '2' (نقدي).
+- Still opening SMACC's own web screen: editing a saved document, and the login page only for an SMS
+  code / picture code.
 - `extension/` + `android-js/` + `tools/build_bundle.py`: the Chrome extension bundled into
   `assets/zod_bundle.js`, injected at document start on SMACC pages (not on `/zod-app/`).
 - Auto sign-in: `android-js/android.js` (login-page capture/fill) + MainActivity (EncryptedSharedPreferences).
@@ -96,6 +123,8 @@ sale, a simplified (walk-in) invoice, discounts, several lines, other units. Do 
 until recordings cover those.
 
 ## Next steps
+0. Owner: make one real cash sale from the app with "Record for Claude" on; check it in SMACC; send the
+   recording. Then a return the same way. Fix whatever differs before relying on it.
 1. Get recordings (phone recorder, or on PC: Claude in Chrome with the owner logged in, or a HAR
    started after login) of: a cash invoice for a walk-in customer with two items; an invoice for a
    VAT-registered customer; opening an existing sales and purchase invoice; a sales return; a stock

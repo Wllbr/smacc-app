@@ -1,7 +1,9 @@
 /* ZOD SMACC - the app's own screens. Served by the app at https://<your smacc host>/zod-app/, so the
    calls below go to SMACC with the phone's own login, exactly as SMACC's pages make them.
-   Everything here only READS from SMACC (and signs in). Creating or editing a document still opens
-   SMACC's own screen: saving is only built from a recording of SMACC doing that exact save. */
+   The calls here only READ from SMACC (and sign in). New documents and returns are put together on the
+   app's own screens, and SMACC's own page for that document (opened out of sight, form.js) fills them in,
+   works out prices, stock, VAT and totals, and saves them with its own Save button. Editing a saved
+   document still opens SMACC's own screen. */
 (function () {
   'use strict';
   var APP = window.ZodAndroid || null;
@@ -40,7 +42,7 @@
   function q(s) { return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
   function b64(s) { return btoa(unescape(encodeURIComponent(s))); }
   var toastT = 0;
-  function toast(msg) { var t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove('on'); }, 2600); }
+  function toast(msg, ms) { var t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(function () { t.classList.remove('on'); }, ms || 2600); }
   function icon(d) { var NS = 'http://www.w3.org/2000/svg', s = document.createElementNS(NS, 'svg'), p = document.createElementNS(NS, 'path'); s.setAttribute('viewBox', '0 0 24 24'); p.setAttribute('d', d); s.appendChild(p); return s; }
   var IC = {
     home: 'M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z',
@@ -105,7 +107,10 @@
   backBtn.addEventListener('click', function () { window.__appBack(); });
   actBtn.addEventListener('click', function () { if (onAct) onAct(); });
   window.__appBack = function () {   // also the phone's back button; false = leave the app
-    if (document.body.classList.contains('sheet')) { closeSheet(); return true; }
+    if (document.body.classList.contains('sheet')) {
+      if (typeof sheetLock === 'function') sheetLock(); else if (!sheetLock) closeSheet();
+      return true;
+    }
     var r = route();
     if (r[0] === 'home') return false;
     if (depth > 0) { depth--; history.back(); } else location.replace('#/home');
@@ -129,8 +134,10 @@
     view.textContent = ''; view.scrollTop = 0;
     drawTabs(r.join('/'));
     var alive = function () { return my === gen; };
+    if (r[0] !== 'new') dropForm();   // SMACC's hidden page for a new document lives only on that screen
     try {
-      if (r[0] === 'docs') screenDocs(r[1] || 'si', alive);
+      if (r[0] === 'new') screenNew(r[1], r[2], alive);
+      else if (r[0] === 'docs') screenDocs(r[1] || 'si', alive);
       else if (r[0] === 'doc' && r[2]) screenDoc(r[1], r[2], alive);
       else if (r[0] === 'items') screenItems(alive);
       else if (r[0] === 'customers') screenCustomers(alive);
@@ -315,8 +322,8 @@
   /* ---------- sheet ---------- */
   var sheetBody = $('sheet-body');
   function openSheet(build) { sheetBody.textContent = ''; build(sheetBody); sheetBody.scrollTop = 0; document.body.classList.add('sheet'); }
-  function closeSheet() { document.body.classList.remove('sheet'); }
-  $('sheet-bg').addEventListener('click', closeSheet);
+  function closeSheet() { sheetLock = false; document.body.classList.remove('sheet'); }
+  $('sheet-bg').addEventListener('click', function () { if (typeof sheetLock === 'function') sheetLock(); else if (!sheetLock) closeSheet(); });
   function kv(p, k, v, isLtr) {
     if (v == null || String(v).trim() === '') return;
     var r = el('div', 'kv'), s = el('span');
@@ -362,7 +369,8 @@
     };
     add(view, el('h2', null, L('القوائم', 'Menu')));
     add(tiles,
-      tile(IC.plus, 'فاتورة مبيعات جديدة', 'New sales invoice', function () { smacc('/Inventory/SalesInvoicePage.aspx#zod-new'); }, 'main'),
+      tile(IC.plus, 'فاتورة مبيعات جديدة', 'New sales invoice', function () { go('new/si'); }, 'main'),
+      tile(IC.undo, 'مرتجع مبيعات جديد', 'New sales return', function () { go('new/sr'); }),
       tile(IC.doc, 'فواتير المبيعات', 'Sales invoices', function () { go('docs/si'); }),
       tile(IC.undo, 'مرتجعات المبيعات', 'Sales returns', function () { go('docs/sr'); }),
       tile(IC.quote, 'عروض الأسعار', 'Quotations', function () { go('docs/sq'); }),
@@ -400,7 +408,7 @@
   function screenDocs(kind, alive) {
     if (!DOCS[kind]) kind = 'si';
     var D = DOCS[kind];
-    setBar(L(D.ar, D.en), true, IC.plus, function () { smacc(D.url + (D.add || '')); });
+    setBar(L(D.ar, D.en), true, IC.plus, function () { go('new/' + kind); });
     var chips = el('div', 'chips');
     Object.keys(DOCS).forEach(function (k) {
       var c = el('button', 'chip' + (DOCS[k] === D ? ' on' : ''), L(DOCS[k].ar, DOCS[k].en));
@@ -586,15 +594,23 @@
 
     var btn = function (cls, text, fn) { var b = el('button', 'btn ' + cls, text); b.addEventListener('click', fn); box.appendChild(b); };
     if (D.print) btn('', L('طباعة / PDF', 'Print / PDF'), function () { printDoc(D.print, no); });
-    if (D.ret) btn('ghost', L('عمل مرتجع (شاشة SMACC)', 'Make a return (SMACC screen)'), function () { smacc(D.ret + '#zod-return=' + encodeURIComponent(no)); });
+    if (D.ret) btn('ghost', L('عمل مرتجع', 'Make a return'), function () { go('new/' + (kind === 'si' ? 'sr' : 'pr') + '/' + encodeURIComponent(no)); });
     if (D.open) btn('ghost', L('تعديل في SMACC', 'Edit in SMACC'), function () { smacc(D.url + '#zod-open=' + encodeURIComponent(no)); });
   }
-  /* SMACC's own print of the document (the same address SMACC's print button opens). In the app it is
-     loaded out of sight and goes straight to Android's print / save-as-PDF screen. */
+  /* Print / PDF: the phone loads SMACC's print in a page the user never sees (SMACC can take up to a
+     minute to draw it), then opens Android's print screen. It reports back through __printState. */
+  var printBusy = 0;
+  window.__printState = function (st) {
+    printBusy = 0;
+    if (st === 'ready') toast(L('اختر الطابعة أو «حفظ كـ PDF»', 'Pick a printer or "Save as PDF"'));
+    else if (st === 'login') { toast(L('انتهت الجلسة، سجّل الدخول ثم اطبع مرة أخرى', 'Signed out: sign in, then print again'), 5000); showLogin(); }
+    else toast(L('لم تجهز الطباعة من SMACC، حاول مرة أخرى', 'SMACC did not finish the print, try again'), 5000);
+  };
   function printDoc(pageId, no) {
     var path = '/Inventory/PrintReport.aspx?page_id=' + pageId + '&record_number=' + encodeURIComponent(btoa(no));
     if (APP && typeof APP.printPage === 'function') {
-      try { APP.printPage(path); toast(L('جارٍ تجهيز الطباعة…', 'Preparing the print…')); return; } catch (e) { /* older app: SMACC's page */ }
+      if (printBusy && Date.now() - printBusy < 120000) { toast(L('الطباعة قيد التجهيز… قد تأخذ حتى دقيقة', 'Still preparing the print… up to a minute'), 4000); return; }
+      try { APP.printPage(path); printBusy = Date.now(); toast(L('جارٍ تجهيز الطباعة… قد تأخذ حتى دقيقة', 'Preparing the print… up to a minute'), 8000); return; } catch (e) { /* older app: SMACC's page */ }
     }
     smacc(path);
   }
@@ -716,7 +732,7 @@
       c.appendChild(spinner());
       add(p, c);
       var nb = el('button', 'btn', L('فاتورة جديدة لهذا العميل', 'New invoice for this customer'));
-      nb.addEventListener('click', function () { smacc('/Inventory/SalesInvoicePage.aspx#zod-new=' + encodeURIComponent(x.CustomerCode)); });
+      nb.addEventListener('click', function () { closeSheet(); go('new/si/' + encodeURIComponent(x.CustomerCode)); });
       var inv = el('button', 'btn ghost', L('فواتير العميل', 'This customer\'s invoices'));
       inv.addEventListener('click', function () { closeSheet(); sessionStorage.setItem('zodapp|find', String(x.CustomerName || '').trim()); go('docs/si'); });
       add(p, nb, inv);
@@ -857,6 +873,740 @@
       try { ver = APP.version(); } catch (e) { ver = ''; }
       add(view, el('div', 'center small', 'ZOD SMACC ' + ver));
     }
+  }
+
+  /* ---------- making documents: sales invoice, quotation, purchase, stock transfer, returns ----------
+     The app's own screens put the document together. SMACC's own "new" page for it is opened out of sight
+     (form.js) as soon as the screen opens; "Review" has SMACC fill it in (its lookups, prices, stock check,
+     VAT and totals) and the review shows SMACC's own figures; "Save" presses SMACC's own Save button. */
+  var PAY_SI = [['1', 'نقدي', 'Cash'], ['2', 'أجل', 'Credit'], ['3', 'البنك', 'Bank'], ['4', 'الشبكة', 'Card'], ['6', 'الدفع عند الاستلام', 'Cash on delivery'], ['7', 'الدفع الالكتروني', 'Online payment']];
+  var PAY_PI = [['1', 'نقدي', 'Cash'], ['2', 'أجل', 'Credit'], ['3', 'البنك', 'Bank']];
+  var MAKE = {
+    si: { ar: 'فاتورة مبيعات جديدة', en: 'New sales invoice', who: 'cust', sm: true, pay: PAY_SI, cat: true, notes: true, vat: true },
+    sq: { ar: 'عرض سعر جديد', en: 'New quotation', who: 'cust', sm: true, cat: true, notes: true, vat: true },
+    pi: { ar: 'فاتورة مشتريات جديدة', en: 'New purchase invoice', who: 'sup', pay: PAY_PI, ref: true, notes: true, vat: true, cost: true },
+    st: { ar: 'تحويل مخزون جديد', en: 'New stock transfer', transfer: true, ref: true, cost: true },
+    sr: { ar: 'مرتجع مبيعات جديد', en: 'New sales return', ret: 'si' },
+    pr: { ar: 'مرتجع مشتريات جديد', en: 'New purchase return', ret: 'pi' }
+  };
+  var LISTS = {};
+  function codeList(tbl, sub) {   // SMACC's full lists, the same call its boxes make when opened empty
+    if (!LISTS[tbl]) {
+      LISTS[tbl] = ws('AutoCompleteSearchCodeName', "{'table':'" + tbl + "','key':'','isExact':'False','subSupport':'" + sub + "','optionalParam':''}").then(function (d) {
+        return (Array.isArray(d) ? d : []).map(function (s) { var a = String(s).split('<-|->'); return { code: String(a[0] || '').trim(), name: String(a[1] || '').trim() }; })
+          .filter(function (x) { return x.code; });
+      });
+      LISTS[tbl].catch(function () { delete LISTS[tbl]; });
+    }
+    return LISTS[tbl];
+  }
+  var mk = null;   // SMACC's page for the document being made: { kind, F }
+  function formFor(kind) {
+    if (!window.ZodForm) return null;
+    if (mk && mk.kind === kind && !mk.F.closed && !mk.F.lost && !mk.F.auth && !mk.F.broken && !mk.F.savedAt) return mk.F;
+    dropForm();
+    try { mk = { kind: kind, F: window.ZodForm.open(kind) }; } catch (e) { mk = null; return null; }
+    var F = mk.F;
+    F.ready.catch(function () { F.broken = true; });
+    return F;
+  }
+  function dropForm() {   // a page still saving, or just saved, is closed only once SMACC has finished its own steps
+    if (!mk) return;
+    var F = mk.F, t0 = Date.now();
+    mk = null;
+    (function later() {
+      if (F.saving && Date.now() - t0 < 200000) { setTimeout(later, 1000); return; }
+      var wait = F.savedAt ? Math.max(0, 8000 - (Date.now() - F.savedAt)) : 0;
+      setTimeout(function () { try { F.close(); } catch (e) { /* ignore */ } }, wait);
+    })();
+  }
+  function freshNew(kind) { var h = '#/new/' + kind; if (location.hash === h) render(); else location.replace(h); }
+  function draftKey(kind) { return 'zodapp|draft|' + kind; }
+  function loadDraft(kind) { try { return JSON.parse(localStorage.getItem(draftKey(kind)) || 'null'); } catch (e) { return null; } }
+  function saveDraft(dr) { try { localStorage.setItem(draftKey(dr.kind), JSON.stringify(dr)); } catch (e) { /* ignore */ } }
+  function lastOf(kind) { try { return JSON.parse(localStorage.getItem('zodapp|last|' + kind) || '{}') || {}; } catch (e) { return {}; } }
+  function field(label, input) { return add(el('label', 'fld'), el('span', null, label), input); }
+  function selectEl(opts, val) {
+    var s = el('select');
+    opts.forEach(function (o) { var x = el('option', null, o[1]); x.value = o[0]; s.appendChild(x); });
+    s.value = val;
+    if (s.value !== String(val) && opts.length) s.value = opts[0][0];
+    return s;
+  }
+  function pickRow(label, value, sub, fn) {
+    var r = add(el('div', 'kv tap'), el('span', null, label), add(el('span'), document.createTextNode(value || L('اختر…', 'Choose…')), sub ? add(el('div', 'muted small'), ltr(sub)) : null));
+    r.addEventListener('click', fn);
+    return r;
+  }
+  function stepper(val, max, onChange) {
+    var s = el('div', 'step'), minus = el('button', null, '−'), plus = el('button', null, '+'), v = el('b');
+    v.appendChild(ltr(qty(val)));
+    minus.disabled = val <= 0; plus.disabled = max != null && val >= max;
+    minus.addEventListener('click', function (e) { e.stopPropagation(); onChange(Math.max(0, val - 1)); });
+    plus.addEventListener('click', function (e) { e.stopPropagation(); onChange(max != null ? Math.min(max, val + 1) : val + 1); });
+    return add(s, minus, v, plus);
+  }
+  function note(cls, text) { return el('div', 'note ' + cls, text); }
+  function numIn(v, ph) { var i = el('input'); i.type = 'text'; i.inputMode = 'decimal'; i.dir = 'ltr'; i.value = v == null ? '' : String(v); if (ph) i.placeholder = ph; return i; }
+  function readNum(i) { var t = latin(i.value).replace(/,/g, '').trim(); return t === '' ? null : Number(t); }
+  /* while SMACC works on the document the sheet can't be swiped away: false = free, true = wait,
+     a function = what the phone's back button / a tap outside does instead */
+  var sheetLock = false;
+
+  function pickCustomer(done) {
+    openSheet(function (p) {
+      var inp = el('input'), list = el('div'), info = el('div', 'center small');
+      inp.type = 'search'; inp.className = 'sinput'; inp.placeholder = L('اسم العميل أو رمزه', 'Customer name or code');
+      var cash = el('button', 'card tap', L('نقدي (عميل بدون اسم)', 'Cash (walk-in customer)'));
+      cash.style.cssText = 'display:block;width:100%;text-align:start';
+      cash.addEventListener('click', function () { closeSheet(); done({ code: '2', name: 'نقدي', vat: '' }); });
+      add(p, el('h3', null, L('العميل', 'Customer')), inp, cash, list, info);
+      var run = 0, tm = 0;
+      inp.addEventListener('input', function () {
+        clearTimeout(tm);
+        var t = latin(inp.value).trim();
+        if (!t) { run++; list.textContent = ''; return; }
+        tm = setTimeout(function () {
+          var my = ++run, byCode = /^\d{1,6}$/.test(t);
+          list.textContent = ''; info.textContent = ''; list.appendChild(spinner());
+          listCall(CUST, byCode ? 'CustomerCode' : 'CustomerName', t, 30, 1).then(function (r) {
+            if (my !== run) return;
+            list.textContent = '';
+            if (!r.rows.length) info.textContent = L('لا يوجد عملاء', 'No customers found');
+            r.rows.forEach(function (x) {
+              var c = el('button', 'card tap');
+              c.style.cssText = 'display:block;width:100%;text-align:start';
+              add(c, add(el('div', 'row'), el('div', 'grow', String(x.CustomerName || '').trim()), ltr(String(x.CustomerCode || ''), 'pill')),
+                x.Phone1 ? add(el('div', 'muted small'), ltr(String(x.Phone1))) : null);
+              c.addEventListener('click', function () {
+                c.disabled = true;
+                post(CUST + '/LoadRec', "{ 'key' : '" + q(x.CustomerCode) + "'}").then(function (o) { return o || {}; }, function () { return {}; }).then(function (o) {
+                  closeSheet();
+                  done({ code: String(x.CustomerCode), name: String(x.CustomerName || o.CustomerName || '').trim(), vat: String(o.VATNumber || '').trim(), stop: !!o.StopDealing });
+                });
+              });
+              list.appendChild(c);
+            });
+          }).catch(function (e) { if (my !== run) return; list.textContent = ''; if (e && e.auth) { closeSheet(); showLogin(); } else info.textContent = L('تعذر البحث', 'Search failed'); });
+        }, 450);
+      });
+      setTimeout(function () { inp.focus(); }, 150);
+    });
+  }
+  function pickSupplier(done) {
+    openSheet(function (p) {
+      var inp = el('input'), list = el('div'), info = el('div', 'center small');
+      inp.type = 'search'; inp.className = 'sinput'; inp.placeholder = L('اسم المورد أو رمزه', 'Supplier name or code');
+      add(p, el('h3', null, L('المورد', 'Supplier')), inp, list, info);
+      var run = 0, tm = 0;
+      function search(t) {
+        var my = ++run;
+        list.textContent = ''; info.textContent = ''; list.appendChild(spinner());
+        ws('AutoCompleteSearchCodeName', "{'table':'INV_SuppliersNames','key':'" + (t ? btoa(encodeURIComponent(t)) : '') + "','isExact':'False','subSupport':'','optionalParam':''}").then(function (d) {
+          if (my !== run) return;
+          list.textContent = '';
+          var rows = (Array.isArray(d) ? d : []).map(function (s) { var a = String(s).split('<-|->'); return { code: String(a[0] || '').trim(), name: String(a[1] || '').trim() }; }).filter(function (x) { return x.code; });
+          if (!rows.length) info.textContent = L('لا يوجد موردون', 'No suppliers found');
+          rows.forEach(function (x) {
+            var c = el('button', 'card tap');
+            c.style.cssText = 'display:block;width:100%;text-align:start';
+            add(c, add(el('div', 'row'), el('div', 'grow', x.name), ltr(x.code, 'pill')));
+            c.addEventListener('click', function () { closeSheet(); done({ code: x.code, name: x.name, vat: '' }); });
+            list.appendChild(c);
+          });
+        }).catch(function (e) { if (my !== run) return; list.textContent = ''; if (e && e.auth) { closeSheet(); showLogin(); } else info.textContent = L('تعذر البحث', 'Search failed'); });
+      }
+      inp.addEventListener('input', function () { clearTimeout(tm); var t = latin(inp.value).trim(); tm = setTimeout(function () { search(t); }, 450); });
+      search('');
+      setTimeout(function () { inp.focus(); }, 150);
+    });
+  }
+  /* items: SMACC's item search with this branch's price and stock; the sheet stays open to add several */
+  function pickItems(wh, onPick) {
+    openSheet(function (p) {
+      var inp = el('input'), list = el('div'), info = el('div', 'center small', L('اكتب اسم الصنف أو رمزه', 'Type an item name or code'));
+      inp.type = 'search'; inp.className = 'sinput'; inp.placeholder = L('اسم الصنف أو الرمز', 'Item name or code');
+      var done = el('button', 'btn', L('تم', 'Done'));
+      done.addEventListener('click', closeSheet);
+      add(p, el('h3', null, L('إضافة أصناف', 'Add items')), inp, list, info, done);
+      var run = 0, tm = 0;
+      function search(t) {
+        var my = ++run;
+        list.textContent = ''; info.textContent = ''; list.appendChild(spinner());
+        ws('AutoCompleteSmartCodeNameSearch', "{'codeOrName':'" + btoa(encodeURIComponent(t)) + "','isExact':'False','itemType':'1', 'onlyBaseItemCode':'False'," +
+          "'isSizeColorParent':'False','isProductionCall':'False','appendSalesPriceAndStock':'true','warehouseCode':'" + q(wh || '') + "'}").then(function (d) {
+          if (my !== run) return;
+          list.textContent = '';
+          var rows = (Array.isArray(d) ? d : []).map(function (s) {
+            var a = String(s).split('<-|->'), n = function (x) { return Number(String(x || '').replace(/^[\s|]+/, '')); };
+            return { code: String(a[0] || '').trim(), name: String(a[1] || '').trim(), price: n(a[2]), stock: a.length > 3 ? n(a[3]) : null };
+          }).filter(function (x) { return x.code; });
+          if (!rows.length) { info.textContent = L('لا توجد أصناف', 'No items found'); return; }
+          rows.slice(0, 40).forEach(function (it) {
+            var c = el('button', 'card tap');
+            c.style.cssText = 'display:block;width:100%;text-align:start';
+            var badge = el('span', 'pill', L('أضيف', 'Added'));
+            badge.style.display = 'none';
+            add(c, add(el('div', 'row'), el('div', 'grow', it.name), add(el('div', 'amt'), ltr(money(it.price)))),
+              add(el('div', 'row muted small'), ltr(it.code), el('span', 'grow'), badge,
+                it.stock == null || !wh ? null : add(el('span', 'pill ' + (it.stock > 0 ? 'ok' : it.stock < 0 ? 'bad' : 'zero')), ltr(qty(it.stock)))));
+            c.addEventListener('click', function () { var n = onPick(it); badge.textContent = L('أضيف', 'Added') + (n > 1 ? ' ×' + n : ''); badge.style.display = ''; });
+            list.appendChild(c);
+          });
+          if (rows.length > 40) info.textContent = L('أول 40 صنف، اكتب أكثر للتحديد', 'First 40 items; type more to narrow down');
+        }).catch(function (e) { if (my !== run) return; list.textContent = ''; if (e && e.auth) { closeSheet(); showLogin(); } else info.textContent = L('تعذر البحث', 'Search failed'); });
+      }
+      inp.addEventListener('input', function () {
+        clearTimeout(tm);
+        var t = latin(inp.value).trim();
+        if (t.length < 2) { run++; list.textContent = ''; info.textContent = L('اكتب اسم الصنف أو رمزه', 'Type an item name or code'); return; }
+        tm = setTimeout(function () { search(t); }, 450);
+      });
+      setTimeout(function () { inp.focus(); }, 150);
+    });
+  }
+
+  function screenNew(kind, arg, alive) {
+    var M = MAKE[kind];
+    if (!M) { location.replace('#/home'); return; }
+    if (M.ret) { screenReturn(kind, arg, alive); return; }
+    setBar(L(M.ar, M.en), true);
+    var last = lastOf(kind), dr = loadDraft(kind);
+    if (!dr || !Array.isArray(dr.lines)) {
+      dr = { kind: kind, lines: [], sm: last.sm || '', wh: last.wh || S.wh || '', whName: last.whName || '', to: last.to || '', pay: last.pay || '1', cat: '', notes: '', ref: '' };
+      if (kind === 'si') dr.cust = { code: '2', name: 'نقدي', vat: '' };
+    }
+    formFor(kind);   // SMACC's page loads now, while the document is put together
+    var whs = [], sms = [];
+    function save() { saveDraft(dr); }
+    function catOf() { return dr.cat || (dr.cust && dr.cust.vat ? '1' : '2'); }
+    function draw() {
+      if (!alive()) return;
+      var y = view.scrollTop;
+      view.textContent = '';
+      var h = el('div', 'card');
+      if (M.who === 'cust') {
+        add(h, pickRow(L('العميل', 'Customer'), dr.cust ? dr.cust.name : '', dr.cust ? dr.cust.code + (dr.cust.vat ? ' · ' + dr.cust.vat : '') : '', function () {
+          pickCustomer(function (c) { dr.cust = c; dr.cat = ''; save(); draw(); if (c.stop) toast(L('هذا العميل موقوف التعامل', 'Dealing with this customer is stopped'), 4000); });
+        }));
+      }
+      if (M.who === 'sup') {
+        add(h, pickRow(L('المورد', 'Supplier'), dr.sup ? dr.sup.name : '', dr.sup ? dr.sup.code : '', function () {
+          pickSupplier(function (s) { dr.sup = s; save(); draw(); });
+        }));
+      }
+      var whOpts = [['', L('اختر…', 'Choose…')]].concat(whs.map(function (x) { return [x.code, x.name]; }));
+      var setRow = function (label, control) { h.appendChild(add(el('div', 'set'), add(el('div', 'grow'), el('div', null, label)), control)); };
+      var whSel = selectEl(whOpts, dr.wh);
+      whSel.addEventListener('change', function () {
+        dr.wh = whSel.value;
+        var f = whs.filter(function (x) { return x.code === dr.wh; })[0];
+        dr.whName = f ? f.name : '';
+        save();
+      });
+      setRow(M.transfer ? L('من فرع', 'From branch') : L('الفرع', 'Branch'), whSel);
+      if (M.transfer) {
+        var toSel = selectEl(whOpts, dr.to);
+        toSel.addEventListener('change', function () { dr.to = toSel.value; save(); });
+        setRow(L('إلى فرع', 'To branch'), toSel);
+      }
+      if (M.sm) {
+        var smSel = selectEl([['', L('اختر…', 'Choose…')]].concat(sms.map(function (x) { return [x.code, x.name]; })), dr.sm);
+        smSel.addEventListener('change', function () { dr.sm = smSel.value; save(); });
+        setRow(L('البائع', 'Salesman'), smSel);
+      }
+      if (M.pay) {
+        var paySel = selectEl(M.pay.map(function (x) { return [x[0], L(x[1], x[2])]; }), dr.pay);
+        paySel.addEventListener('change', function () { dr.pay = paySel.value; save(); });
+        setRow(L('طريقة الدفع', 'Payment'), paySel);
+      }
+      if (M.cat) {
+        var catSel = selectEl([['1', L('فاتورة ضريبية', 'Tax invoice')], ['2', L('فاتورة مبسطة', 'Simplified invoice')]], catOf());
+        catSel.addEventListener('change', function () { dr.cat = catSel.value; save(); });
+        setRow(L('نوع الفاتورة', 'Invoice type'), catSel);
+      }
+      if (M.ref) {
+        var ref = el('input'); ref.value = dr.ref || ''; ref.dir = 'ltr';
+        ref.addEventListener('input', function () { dr.ref = ref.value; save(); });
+        h.appendChild(field(kind === 'pi' ? L('رقم فاتورة المورد', 'Supplier\'s invoice number') : L('رقم المرجع', 'Reference'), ref));
+      }
+      if (M.notes) {
+        var nt = el('textarea'); nt.value = dr.notes || '';
+        nt.addEventListener('input', function () { dr.notes = nt.value; save(); });
+        h.appendChild(field(L('ملاحظات', 'Notes'), nt));
+      }
+      add(view, h);
+
+      add(view, el('h2', null, L('الأصناف', 'Items') + ' (' + dr.lines.length + ')'));
+      var lc = el('div', 'card lines');
+      if (!dr.lines.length) lc.appendChild(el('div', 'muted small', L('لا توجد أصناف بعد', 'No items yet')));
+      var est = 0, unknown = false;
+      dr.lines.forEach(function (ln, i) {
+        // a purchase's price is SMACC's purchase price (shown in the review), not the selling price from the search
+        var price = ln.price != null ? ln.price : M.cost ? null : ln.listPrice;
+        if (price == null) unknown = true;
+        else est += Math.max(0, (Number(price) || 0) * ln.qty - (Number(ln.disc) || 0));
+        var line = el('div', 'line' + (ln.err ? ' err' : ''));
+        var sub = add(el('div', 'row muted small'), ltr(ln.code), el('span', 'grow'),
+          M.transfer ? null : price == null ? el('span', null, L('سعر SMACC', 'SMACC\'s price'))
+            : add(el('span'), ltr(money(price)), ln.price != null && ln.price !== ln.listPrice ? document.createTextNode(' ✎') : null));
+        add(line, add(el('div', 'row'), el('div', 'grow', ln.name), stepper(ln.qty, null, function (n) {
+          if (n <= 0) { dr.lines.splice(i, 1); } else { ln.qty = n; ln.err = ''; }
+          save(); draw();
+        })), sub);
+        if (Number(ln.disc)) line.appendChild(el('div', 'muted small', L('خصم ', 'Discount ') + money(ln.disc)));
+        if (ln.stock != null && !M.cost && ln.qty > ln.stock) line.appendChild(el('div', 'pill bad', L('المخزون ', 'Stock ') + qty(ln.stock)));
+        if (ln.err) line.appendChild(note('bad', ln.err));
+        line.addEventListener('click', function () { editLine(i); });
+        lc.appendChild(line);
+      });
+      add(view, lc);
+      var addBtn = el('button', 'btn ghost', '+ ' + L('إضافة صنف', 'Add an item'));
+      addBtn.addEventListener('click', function () {
+        if (!dr.wh) { toast(L('اختر الفرع أولاً', 'Choose the branch first')); return; }
+        pickItems(dr.wh, function (it) {
+          var ex = dr.lines.filter(function (l) { return l.code === it.code; })[0];
+          if (ex) { ex.qty += 1; ex.err = ''; } else dr.lines.push({ code: it.code, name: it.name, qty: 1, listPrice: it.price, price: null, disc: 0, stock: it.stock });
+          save(); draw();
+          return ex ? ex.qty : 1;
+        });
+      });
+      add(view, addBtn);
+      if (dr.lines.length && !M.transfer && unknown) add(view, el('div', 'muted small', L('يضع SMACC سعر الشراء في المراجعة', 'SMACC puts in the purchase price in the review')));
+      if (dr.lines.length && !M.transfer && !unknown) {
+        var tc = el('div', 'card');
+        if (M.vat) {
+          kv(tc, L('قبل الضريبة (تقريبي)', 'Before VAT (estimate)'), money(est), true);
+          kv(tc, L('الإجمالي مع الضريبة (تقريبي)', 'Total with VAT (estimate)'), add(el('b'), ltr(money(est * 1.15))));
+        } else kv(tc, L('الإجمالي (تقريبي)', 'Total (estimate)'), money(est), true);
+        add(view, el('h2', null, L('الإجمالي', 'Totals')), tc, el('div', 'muted small', L('الأسعار والضريبة النهائية يحسبها SMACC في المراجعة', 'SMACC works out the final prices and VAT in the review')));
+      }
+      var go1 = el('button', 'btn', L('مراجعة وحفظ', 'Review and save'));
+      go1.addEventListener('click', function () {
+        var miss = !dr.lines.length ? L('أضف صنفاً واحداً على الأقل', 'Add at least one item')
+          : M.who === 'cust' && !dr.cust ? L('اختر العميل', 'Choose the customer')
+          : M.who === 'sup' && !dr.sup ? L('اختر المورد', 'Choose the supplier')
+          : !dr.wh ? L('اختر الفرع', 'Choose the branch')
+          : M.transfer && (!dr.to || dr.to === dr.wh) ? L('اختر فرعاً آخر للتحويل إليه', 'Choose another branch to transfer to')
+          : M.sm && !dr.sm ? L('اختر البائع', 'Choose the salesman') : '';
+        if (miss) { toast(miss, 3000); return; }
+        if (!document.body.classList.contains('sheet')) reviewMake(kind, dr, { catOf: catOf, redraw: draw });
+      });
+      var clr = el('button', 'btn ghost', L('مسح والبدء من جديد', 'Clear and start again')), armed = 0;
+      clr.addEventListener('click', function () {   // a second tap clears (no pop-up question)
+        if (dr.lines.length && Date.now() - armed > 4000) { armed = Date.now(); clr.textContent = L('اضغط مرة أخرى للمسح', 'Tap again to clear'); return; }
+        try { localStorage.removeItem(draftKey(kind)); } catch (e) { /* ignore */ }
+        freshNew(kind);
+      });
+      add(view, go1, clr);
+      view.scrollTop = y;
+    }
+    function editLine(i) {
+      var ln = dr.lines[i];
+      openSheet(function (p) {
+        var qn = numIn(ln.qty), pr = numIn(ln.price != null ? ln.price : '', M.cost ? L('سعر SMACC', 'SMACC\'s price') : money(ln.listPrice)), dc = numIn(ln.disc || '');
+        add(p, el('h3', null, ln.name), add(el('div', 'muted small'), ltr(ln.code)),
+          field(L('الكمية', 'Quantity'), qn),
+          M.transfer ? null : field((M.cost ? L('سعر الشراء قبل الضريبة', 'Purchase price before VAT') : L('السعر قبل الضريبة', 'Price before VAT')) +
+            (M.cost ? '' : ' (' + L('فارغ = سعر SMACC', 'empty = SMACC\'s price') + ')'), pr),
+          M.transfer ? null : field(L('مبلغ الخصم', 'Discount amount'), dc));
+        var withVat = el('div', 'muted small');
+        var upd = function () { var v = readNum(pr); v = v == null && !M.cost ? ln.listPrice : v; withVat.textContent = M.vat && v != null ? L('السعر مع الضريبة: ', 'Price with VAT: ') + money(v * 1.15) : ''; };
+        if (!M.transfer) { p.appendChild(withVat); pr.addEventListener('input', upd); upd(); }
+        var ok = el('button', 'btn', L('حفظ', 'Save')), del = el('button', 'btn ghost', L('حذف الصنف', 'Remove the item'));
+        ok.addEventListener('click', function () {
+          var n = readNum(qn), v = readNum(pr), dsc = readNum(dc);
+          if (!(n > 0)) { toast(L('اكتب كمية صحيحة', 'Type a valid quantity')); return; }
+          if (v != null && !(v >= 0)) { toast(L('اكتب سعراً صحيحاً', 'Type a valid price')); return; }
+          ln.qty = n; ln.price = v; ln.disc = dsc > 0 ? dsc : 0; ln.err = '';
+          save(); closeSheet(); draw();
+        });
+        del.addEventListener('click', function () { dr.lines.splice(i, 1); save(); closeSheet(); draw(); });
+        add(p, ok, del);
+      });
+    }
+    view.appendChild(spinner());
+    var lists = [codeList('INV_WarehouseNames', '0').then(function (a) { whs = a; }, function () { whs = []; })];
+    if (M.sm) lists.push(codeList('INV_SalesmanNames', '').then(function (a) { sms = a; }, function () { sms = []; }));
+    var custLoad = null;
+    if (arg && M.who === 'cust') {
+      custLoad = post(CUST + '/LoadRec', "{ 'key' : '" + q(arg) + "'}").then(function (o) {
+        if (o && o.CustomerCode) { dr.cust = { code: String(o.CustomerCode), name: String(o.CustomerName || '').trim(), vat: String(o.VATNumber || '').trim() }; dr.cat = ''; save(); }
+      }, function () { /* keep the draft's customer */ });
+      lists.push(custLoad);
+    }
+    Promise.all(lists).then(function () {
+      if (dr.wh && !dr.whName) { var f = whs.filter(function (x) { return x.code === dr.wh; })[0]; if (f) dr.whName = f.name; }
+      draw();
+    });
+  }
+
+  /* the review: SMACC fills in its page and works everything out; nothing is saved until "Save" */
+  function busySheet(p, text, onCancel) {
+    p.textContent = '';
+    var line = el('div', 'muted small', '');
+    add(p, add(el('div', 'center'), spinner(), el('div', null, text), line));
+    sheetLock = onCancel || true;
+    if (onCancel) {
+      var c = el('button', 'btn ghost', L('إلغاء', 'Cancel'));
+      c.addEventListener('click', onCancel);
+      p.appendChild(c);
+    }
+    return line;
+  }
+  function failSheet(p, msg, back) {
+    sheetLock = false;
+    p.textContent = '';
+    add(p, el('h3', null, L('لم يكتمل', 'Not finished')), note('bad', msg || L('حدث خطأ', 'Something went wrong')));
+    var b = el('button', 'btn', L('رجوع', 'Back'));
+    b.addEventListener('click', function () { closeSheet(); if (back) back(); });
+    p.appendChild(b);
+  }
+  function headSteps(kind, dr, cat) {
+    if (kind === 'si' || kind === 'sq') {
+      var s = [{ sel: '#cpBulk_cpForm_SalesmanCode', val: dr.sm, op: 'blur' }, { sel: '#cpBulk_cpForm_CustomerCode', val: dr.cust.code, op: 'blur' },
+        { sel: '#cpBulk_cpForm_WarehouseCode', val: dr.wh, op: 'blur' }];
+      if (kind === 'si') s.push({ sel: '#PaymentType', val: dr.pay, op: 'change' });
+      s.push({ sel: '#cpBulk_cpForm_TaxCategoryCode', val: cat, op: 'change' });
+      if (dr.notes) s.push({ sel: '#cpBulk_cpForm_Instructions', val: dr.notes, op: 'type' });
+      return s;
+    }
+    if (kind === 'pi') {
+      var t = [{ sel: '#cpBulk_cpForm_SupplierCode', val: dr.sup.code, op: 'blur' }, { sel: '#cpBulk_cpForm_WarehouseName', val: dr.whName, op: 'blur' },
+        { sel: '#PaymentType', val: dr.pay, op: 'change' }];
+      if (dr.ref) t.push({ sel: '#cpBulk_cpForm_ReferenceNumber', val: dr.ref, op: 'type' });
+      if (dr.notes) t.push({ sel: '#cpBulk_cpForm_Instructions', val: dr.notes, op: 'type' });
+      return t;
+    }
+    var u = [{ sel: '#cpBulk_cpForm_WarehouseCodeFrom', val: dr.wh, op: 'blur' }, { sel: '#cpBulk_cpForm_WarehouseCodeTo', val: dr.to, op: 'blur' }];
+    if (dr.ref) u.push({ sel: '#cpBulk_cpForm_ReferenceNumber', val: dr.ref, op: 'type' });
+    return u;
+  }
+  function readHead(kind, F) {   // what SMACC put in its header boxes
+    var rows = [], bad = [];
+    var need = function (label, v) { v = String(v || '').trim(); rows.push([label, v]); if (!v) bad.push(label); };
+    if (kind === 'si' || kind === 'sq') {
+      need(L('العميل', 'Customer'), F.val('#cpBulk_cpForm_CustomerName'));
+      need(L('الفرع', 'Branch'), F.val('#cpBulk_cpForm_WarehouseName'));
+      need(L('البائع', 'Salesman'), F.val('#cpBulk_cpForm_SalesmanName'));
+      if (kind === 'si') rows.push([L('طريقة الدفع', 'Payment'), F.text('#PaymentType')]);
+      rows.push([L('نوع الفاتورة', 'Invoice type'), F.text('#cpBulk_cpForm_TaxCategoryCode')]);
+    } else if (kind === 'pi') {
+      need(L('المورد', 'Supplier'), F.val('#cpBulk_cpForm_SupplierName'));
+      rows.push([L('الرقم الضريبي', 'VAT number'), F.val('#cpBulk_cpForm_VATNumber')]);
+      need(L('الفرع', 'Branch'), F.val('#cpBulk_cpForm_WarehouseName'));
+      rows.push([L('طريقة الدفع', 'Payment'), F.text('#PaymentType')]);
+      rows.push([L('رقم فاتورة المورد', 'Supplier\'s invoice'), F.val('#cpBulk_cpForm_ReferenceNumber')]);
+    } else {
+      need(L('من فرع', 'From'), F.val('#cpBulk_cpForm_WarehouseNameFrom'));
+      need(L('إلى فرع', 'To'), F.val('#cpBulk_cpForm_WarehouseNameTo'));
+      rows.push([L('رقم المرجع', 'Reference'), F.val('#cpBulk_cpForm_ReferenceNumber')]);
+    }
+    return { rows: rows, bad: bad, warn: [] };
+  }
+  function notesBack(F, notes, head) {   // the notes as SMACC holds them (some pages may have no notes box)
+    if (!String(notes || '').trim()) return;
+    var v = String(F.val('#cpBulk_cpForm_Instructions') || '').trim();
+    if (v) head.rows.push([L('ملاحظات', 'Notes'), v]);
+    else head.warn.push(L('لم يقبل SMACC الملاحظات في هذه الشاشة، لن تُحفظ', 'SMACC did not take the notes on this screen; they won\'t be saved'));
+  }
+  function reviewMake(kind, dr, o) {
+    var F = formFor(kind);
+    if (!F) { toast(L('حدّث التطبيق: هذه الشاشة تحتاج إصداراً أحدث', 'Update the app: this screen needs a newer version'), 4000); return; }
+    var back = function () { F.cancel().catch(function () { /* ignore */ }); o.redraw(); };
+    var stopped = false;
+    openSheet(function (p) {
+      var line = busySheet(p, L('SMACC يجهّز المستند…', 'SMACC is preparing the document…'), function () {
+        stopped = true; closeSheet(); back();   // stops after the item SMACC is on; nothing was saved
+      });
+      (async function () {
+        line.textContent = L('فتح صفحة SMACC…', 'Opening SMACC\'s page…');
+        await F.start();
+        if (stopped) return;
+        line.textContent = L('البيانات الأساسية…', 'Header…');
+        await F.fill(headSteps(kind, dr, o.catOf()));
+        var head = readHead(kind, F), fails = 0, notes = [];
+        notesBack(F, dr.notes, head);
+        for (var i = 0; i < dr.lines.length; i++) {
+          if (stopped) return;
+          var ln = dr.lines[i];
+          line.textContent = L('الصنف ', 'Item ') + (i + 1) + L(' من ', ' of ') + dr.lines.length + ' · ' + ln.name;
+          var r = await F.item({ code: ln.code, qty: ln.qty, price: ln.price, disc: ln.disc });
+          ln.err = r.ok ? '' : (r.msg || L('لم يقبله SMACC', 'SMACC did not accept it'));
+          if (!r.ok) fails++;
+          else {
+            if (r.priceLocked) notes.push(ln.name + ': ' + L('SMACC لا يسمح بتغيير السعر، استُخدم سعره', 'SMACC does not allow changing the price; its price is used'));
+            if (r.note) notes.push(ln.name + ': ' + r.note);
+          }
+          if (r.stock != null) ln.stock = r.stock;
+        }
+        if (stopped) return;
+        saveDraft(dr);
+        head.warn = head.warn.concat(notes);
+        showReview(p, kind, dr, F, head, fails, back);
+      })().catch(function (e) {
+        if (stopped) return;
+        if (e && e.auth) { closeSheet(); showLogin(); return; }
+        failSheet(p, L('تعذر تجهيز المستند في SMACC: ', 'SMACC could not prepare the document: ') + ((e && e.message) || ''), back);
+      });
+    });
+  }
+  function totalsCard(kind, tot, lines) {
+    var tc = el('div', 'card');
+    if (MAKE[kind].transfer) {
+      kv(tc, L('عدد الأصناف', 'Items'), qty(tot.count != null ? tot.count : lines.length), true);
+      kv(tc, L('الكمية', 'Quantity'), qty(tot.qty != null ? tot.qty : lines.reduce(function (s, x) { return s + x.qty; }, 0)), true);
+      if (tot.grand != null) kv(tc, L('القيمة', 'Value'), money(tot.grand), true);
+      return tc;
+    }
+    var net = tot.net != null ? tot.net : tot.grand;
+    if (tot.disc) kv(tc, L('الخصم', 'Discount'), money(tot.disc), true);
+    if (tot.vat != null) kv(tc, L('قبل الضريبة', 'Before VAT'), money((net || 0) - tot.vat), true);
+    if (tot.vat != null) kv(tc, L('الضريبة', 'VAT'), money(tot.vat), true);
+    kv(tc, L('الصافي', 'Net'), add(el('b'), ltr(money(net))));
+    if (tot.rounded != null && Math.abs(tot.rounded - net) > 0.001) kv(tc, L('بعد التقريب', 'After rounding'), money(tot.rounded), true);
+    if (tot.toPay != null && Math.abs(tot.toPay - net) > 0.001) kv(tc, L('المطلوب دفعه', 'To pay'), money(tot.toPay), true);
+    return tc;
+  }
+  function linesCard(kind, lines) {
+    var lc = el('div', 'card lines');
+    lines.forEach(function (x) {
+      var extra = [];
+      if (x.disc) extra.push(L('خصم ', 'Discount ') + money(x.disc));
+      if (x.vat) extra.push(L('ضريبة ', 'VAT ') + money(x.vat));
+      var total = x.total || (MAKE[kind].transfer ? x.price * x.qty : 0);
+      add(lc, add(el('div', 'line'),
+        add(el('div', 'row'), el('div', 'grow', x.name || x.code), add(el('div', 'amt'), ltr(money(total)))),
+        add(el('div', 'row muted small'), ltr(x.code), el('span', 'grow'),
+          add(el('span'), ltr(qty(x.qty)), document.createTextNode(' '), x.unit ? el('span', null, x.unit) : null, document.createTextNode(' × '), ltr(money(x.price)))),
+        extra.length ? el('div', 'muted small', extra.join(' · ')) : null));
+    });
+    return lc;
+  }
+  function showReview(p, kind, dr, F, head, fails, back) {
+    sheetLock = false;
+    p.textContent = '';
+    var lines = F.lines(), tot = F.totals(), D = DOCS[kind];
+    add(p, el('h3', null, L('مراجعة ', 'Review: ') + L(D.one[0], D.one[1])), el('div', 'muted small', L('هذه أرقام SMACC نفسها. لم يُحفظ شيء بعد.', 'These are SMACC\'s own figures. Nothing is saved yet.')));
+    var problems = [];
+    head.bad.forEach(function (b) { problems.push(L('لم يقبل SMACC: ', 'SMACC did not accept: ') + b); });
+    if (fails) problems.push(L('أصناف لم يقبلها SMACC: ', 'Items SMACC did not accept: ') + fails + L(' (انظر الأسباب في الشاشة)', ' (reasons on the screen)'));
+    if (!lines.length) problems.push(L('لا توجد أصناف في SMACC', 'No items in SMACC'));
+    if (!fails && lines.length !== dr.lines.length) problems.push(L('عدد الأصناف في SMACC لا يطابق', 'SMACC has a different number of items'));
+    var hc = el('div', 'card');
+    head.rows.forEach(function (r) { kv(hc, r[0], r[1] || '—'); });
+    add(p, hc);
+    if (problems.length) p.appendChild(note('bad', problems.join('\n')));
+    if (head.warn && head.warn.length) p.appendChild(note('warn', head.warn.join('\n')));
+    add(p, el('h2', null, L('الأصناف', 'Items') + ' (' + lines.length + ')'), linesCard(kind, lines), el('h2', null, L('الإجمالي', 'Totals')), totalsCard(kind, tot, lines));
+    var row = el('div', 'row2');
+    var sv = el('button', 'btn', L('حفظ في SMACC', 'Save in SMACC')), bk = el('button', 'btn ghost', L('رجوع للتعديل', 'Back to edit'));
+    if (problems.length) { sv.disabled = true; sv.style.opacity = '.45'; }
+    bk.addEventListener('click', function () { closeSheet(); back(); });
+    sv.addEventListener('click', function () { if (!problems.length) saveMade(p, kind, F, dr, tot, back); });
+    add(p, add(row, bk, sv));
+  }
+  function saveMade(p, kind, F, dr, tot, back) {
+    var saving = L('جارٍ الحفظ في SMACC…', 'Saving in SMACC…'), wait = L('لا تغلق التطبيق', 'Don\'t close the app');
+    busySheet(p, saving).textContent = wait;
+    Promise.resolve().then(function () {
+      return F.save(function (qn, answer) {   // SMACC asks something in its own window: same question, same buttons
+        sheetLock = true;
+        p.textContent = '';
+        add(p, el('h3', null, qn.title || 'SMACC'), note('warn', qn.text || ''));
+        qn.buttons.forEach(function (b, i) {
+          var x = el('button', i ? 'btn ghost' : 'btn', b);
+          x.addEventListener('click', function () { busySheet(p, saving).textContent = wait; answer(i); });
+          p.appendChild(x);
+        });
+      });
+    }).catch(function (e) {
+      return { ok: false, auth: !!(e && e.auth), unsure: false, msg: (e && e.message) || '' };
+    }).then(function (r) {
+      sheetLock = false;
+      if (r.ok) { savedSheet(p, kind, r, dr, tot); return; }
+      if (r.auth) { closeSheet(); dropForm(); showLogin(L('انتهت الجلسة. افتح القائمة وتأكد هل حُفظ المستند قبل الحفظ مرة أخرى.', 'Signed out. Open the list and check whether it was saved before saving again.')); return; }
+      p.textContent = '';
+      if (r.unsure) {
+        dropForm();
+        sheetLock = function () { closeSheet(); go('docs/' + kind); };
+        add(p, el('h3', null, L('غير مؤكد', 'Not sure')), note('warn', L('لم يصل رد واضح من SMACC. افتح القائمة وتأكد هل حُفظ المستند قبل أن تحاول مرة أخرى.', 'SMACC gave no clear answer. Open the list and check whether it was saved before you try again.') + (r.msg ? '\n' + r.msg : '')));
+        var lb = el('button', 'btn', L('فتح القائمة', 'Open the list'));
+        lb.addEventListener('click', sheetLock);
+        p.appendChild(lb);
+        return;
+      }
+      add(p, el('h3', null, L('لم يُحفظ', 'Not saved')), note('bad', r.msg || r.notes || L('لم يحفظ SMACC المستند', 'SMACC did not save it')));
+      var b = el('button', 'btn', L('رجوع للتعديل', 'Back to edit'));
+      b.addEventListener('click', function () { closeSheet(); back(); });
+      p.appendChild(b);
+    });
+  }
+  function savedSheet(p, kind, r, dr, tot) {
+    var D = DOCS[kind], no = r.no;
+    try { localStorage.removeItem(draftKey(kind)); } catch (e) { /* ignore */ }
+    try {
+      if (dr && !MAKE[kind].ret) localStorage.setItem('zodapp|last|' + kind, JSON.stringify({ sm: dr.sm, wh: dr.wh, whName: dr.whName, to: dr.to, pay: dr.pay }));
+    } catch (e) { /* ignore */ }
+    // the screen under this sheet still shows what was just saved: leaving the sheet always starts a new one
+    var leave = function (then) { return function () { closeSheet(); dropForm(); then(); }; };
+    var again = leave(function () { freshNew(kind); });
+    sheetLock = again;
+    p.textContent = '';
+    add(p, el('div', 'done-mark', '✓'), add(el('h3', 'center-t'), document.createTextNode(L('تم الحفظ: ', 'Saved: ')), ltr(no || '')));
+    if (tot) { var net = tot.net != null ? tot.net : tot.grand; if (net != null) p.appendChild(add(el('div', 'center-t amt'), ltr(money(tot.rounded != null ? tot.rounded : net)))); }
+    var warn = String(r.notes || '').split('\n').filter(function (t) { return t && !/تم الحفظ|بنجاح|success/i.test(t); }).join('\n');
+    if (warn) p.appendChild(note('warn', warn));
+    if (r.offline) p.appendChild(note('warn', L('حفظه SMACC بدون إرسال فوري للهيئة', 'SMACC saved it without sending it to ZATCA right away')));
+    if (D.print && no) { var pb = el('button', 'btn', L('طباعة / PDF', 'Print / PDF')); pb.addEventListener('click', function () { printDoc(D.print, no); }); p.appendChild(pb); }
+    if (no) { var ob = el('button', 'btn ghost', L('فتح المستند', 'Open it')); ob.addEventListener('click', leave(function () { go('doc/' + kind + '/' + encodeURIComponent(no)); })); p.appendChild(ob); }
+    var nb = el('button', 'btn ghost', L('مستند جديد', 'New one'));
+    nb.addEventListener('click', again);
+    p.appendChild(nb);
+  }
+
+  /* returns: the invoice is loaded by SMACC's own search (only what is left to return), then quantities */
+  function screenReturn(kind, arg, alive) {
+    var M = MAKE[kind];
+    setBar(L(M.ar, M.en), true);
+    var F = formFor(kind);
+    if (!arg) {
+      var c = el('div', 'card'), inp = el('input');
+      inp.dir = 'ltr'; inp.placeholder = kind === 'sr' ? 'INV-110000' : '0002-1000';
+      try { inp.value = sessionStorage.getItem('zodapp|retno|' + kind) || ''; } catch (e) { /* ignore */ }
+      var b = el('button', 'btn', L('تحميل الفاتورة', 'Load the invoice'));
+      var goNo = function () {
+        var no = latin(inp.value).trim().toUpperCase();
+        if (!no) { toast(L('اكتب رقم الفاتورة', 'Type the invoice number')); return; }
+        try { sessionStorage.setItem('zodapp|retno|' + kind, no); } catch (e) { /* ignore */ }
+        location.replace('#/new/' + kind + '/' + encodeURIComponent(no));
+      };
+      b.addEventListener('click', goNo);
+      inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') goNo(); });
+      add(c, field(L('رقم الفاتورة الأصلية', 'Original invoice number'), inp), b);
+      add(view, c, el('div', 'muted small', L('أو افتح الفاتورة من القائمة واضغط «عمل مرتجع».', 'Or open the invoice from the list and tap "Make a return".')));
+      setTimeout(function () { inp.focus(); }, 150);
+      return;
+    }
+    if (!F) { add(view, note('bad', L('حدّث التطبيق: هذه الشاشة تحتاج إصداراً أحدث', 'Update the app: this screen needs a newer version'))); return; }
+    var box = el('div');
+    add(view, box);
+    add(box, add(el('div', 'center'), spinner(), el('div', null, L('SMACC يحمّل الفاتورة ', 'SMACC is loading invoice ') + arg + '…')));
+    F.start().then(function () { return F.loadInvoice(arg); }).then(function (r) {
+      if (!alive()) return;
+      box.textContent = '';
+      if (!r.ok) {
+        add(box, note('bad', (r.msg || L('لم تُحمَّل أصناف الفاتورة', 'The invoice\'s items did not load')) +
+          (kind === 'sr' ? '\n' + L('تأكد من الرقم. لا يسمح SMACC بإرجاع فاتورة لم تُرسل بعد إلى هيئة الزكاة (غالباً فواتير اليوم)، ولا فاتورة أُرجعت بالكامل.',
+            'Check the number. SMACC does not allow a return for an invoice not yet sent to ZATCA (often today\'s invoices), or one returned in full.') : '')));
+        var ob = el('button', 'btn ghost', L('رقم آخر', 'Another number'));
+        ob.addEventListener('click', function () { location.replace('#/new/' + kind); });
+        box.appendChild(ob);
+        return;
+      }
+      drawReturn(box, kind, arg, r, F, alive);
+    }).catch(function (e) {
+      if (!alive()) return;
+      if (e && e.auth) { showLogin(); return; }
+      box.textContent = '';
+      add(box, note('bad', L('تعذر فتح صفحة المرتجع في SMACC: ', 'Could not open SMACC\'s return page: ') + ((e && e.message) || '')));
+      var rb = el('button', 'btn', L('إعادة المحاولة', 'Try again'));
+      rb.addEventListener('click', function () { dropForm(); render(); });
+      box.appendChild(rb);
+    });
+  }
+  function drawReturn(box, kind, no, r, F, alive) {
+    var M = MAKE[kind], h = r.head;
+    var qs = r.lines.map(function (l) { return l.avail > 0 ? l.avail : 0; });
+    var reasons = (h.reasons || []).filter(function (o) { return o[0] && o[0] !== '0'; });
+    var st = { reason: reasons.some(function (o) { return o[0] === '4'; }) ? '4' : (reasons[0] ? reasons[0][0] : ''), pay: h.pay, notes: '' };
+    function draw() {
+      if (!alive()) return;
+      var y = view.scrollTop;
+      box.textContent = '';
+      var top = el('div', 'card');
+      var a = add(el('span', 'link'), ltr(no));
+      a.addEventListener('click', function () { go('doc/' + M.ret + '/' + encodeURIComponent(no)); });
+      kv(top, L('الفاتورة', 'Invoice'), a);
+      kv(top, kind === 'sr' ? L('العميل', 'Customer') : L('المورد', 'Supplier'), kind === 'sr' ? h.customer : h.supplier);
+      kv(top, L('الرقم الضريبي', 'VAT number'), h.vat, true);
+      kv(top, L('الفرع', 'Branch'), h.branch);
+      kv(top, L('التاريخ', 'Date'), h.date, true);
+      if (reasons.length) {
+        var rs = selectEl(reasons, st.reason);
+        rs.addEventListener('change', function () { st.reason = rs.value; });
+        top.appendChild(field(L('سبب الإرجاع', 'Reason'), rs));
+      }
+      if ((h.payOptions || []).length) {
+        var ps = selectEl(h.payOptions, st.pay);
+        ps.addEventListener('change', function () { st.pay = ps.value; });
+        top.appendChild(field(L('طريقة الدفع', 'Payment'), ps));
+      }
+      var nt = el('textarea'); nt.value = st.notes;
+      nt.addEventListener('input', function () { st.notes = nt.value; });
+      top.appendChild(field(L('ملاحظات', 'Notes'), nt));
+      add(box, top);
+      var allBtn = el('button', 'chip', L('إرجاع الكل', 'Return all')), noneBtn = el('button', 'chip', L('لا شيء', 'None'));
+      allBtn.addEventListener('click', function () { qs = r.lines.map(function (l) { return l.avail > 0 ? l.avail : 0; }); draw(); });
+      noneBtn.addEventListener('click', function () { qs = r.lines.map(function () { return 0; }); draw(); });
+      add(box, add(el('div', 'row'), el('h2', 'grow', L('الأصناف', 'Items') + ' (' + r.lines.length + ')'), noneBtn, allBtn));
+      var lc = el('div', 'card lines');
+      r.lines.forEach(function (l, i) {
+        var line = el('div', 'line');
+        add(line, add(el('div', 'row'), el('div', 'grow', l.name || l.code),
+          l.avail > 0 ? stepper(qs[i], l.avail, function (n) { qs[i] = n; draw(); }) : el('span', 'pill zero', L('أُرجع بالكامل', 'Fully returned'))),
+          add(el('div', 'row muted small'), ltr(l.code), el('span', 'grow'),
+            add(el('span'), document.createTextNode(L('المتاح ', 'Left ')), ltr(qty(l.avail || 0)), document.createTextNode(' · '), ltr(money(l.price)))));
+        lc.appendChild(line);
+      });
+      add(box, lc);
+      var go1 = el('button', 'btn', L('مراجعة وحفظ', 'Review and save'));
+      go1.addEventListener('click', function () {
+        if (!qs.some(function (x) { return x > 0; })) { toast(L('اختر كمية صنف واحد على الأقل', 'Choose a quantity for at least one item')); return; }
+        if (!document.body.classList.contains('sheet')) reviewReturn(kind, F, qs, st, draw);
+      });
+      add(box, go1);
+      view.scrollTop = y;
+    }
+    draw();
+  }
+  function reviewReturn(kind, F, qs, st, redraw) {
+    openSheet(function (p) {
+      var line = busySheet(p, L('SMACC يحسب المرتجع…', 'SMACC is working out the return…'));
+      (async function () {
+        var steps = [];
+        if (st.reason) steps.push({ sel: '#cpBulk_cpForm_ReturnReason', val: st.reason, op: 'change' });
+        if (st.pay) steps.push({ sel: '#PaymentType', val: st.pay, op: 'change' });
+        if (st.notes) steps.push({ sel: '#cpBulk_cpForm_Instructions', val: st.notes, op: 'type' });
+        await F.fill(steps);
+        line.textContent = L('الكميات…', 'Quantities…');
+        var lines = await F.setReturn(qs);
+        var bad = [];
+        lines.forEach(function (l, i) { if (Math.abs(l.qty - (qs[i] || 0)) > 0.00001) bad.push((l.name || l.code) + ': ' + qty(l.qty) + L(' بدل ', ' instead of ') + qty(qs[i] || 0)); });
+        var used = lines.filter(function (l) { return l.qty > 0; });
+        var head = { rows: [[L('سبب الإرجاع', 'Reason'), F.text('#cpBulk_cpForm_ReturnReason')], [L('طريقة الدفع', 'Payment'), F.text('#PaymentType')]].filter(function (x) { return x[1]; }), bad: [], warn: [] };
+        notesBack(F, st.notes, head);
+        if (bad.length) head.bad.push(L('كميات غيّرها SMACC: ', 'Quantities SMACC changed: ') + bad.join('، '));
+        sheetLock = false;
+        p.textContent = '';
+        var D = DOCS[kind], tot = F.totals();
+        add(p, el('h3', null, L('مراجعة ', 'Review: ') + L(D.one[0], D.one[1])), el('div', 'muted small', L('هذه أرقام SMACC نفسها. لم يُحفظ شيء بعد.', 'These are SMACC\'s own figures. Nothing is saved yet.')));
+        var hc = el('div', 'card');
+        head.rows.forEach(function (r) { kv(hc, r[0], r[1]); });
+        if (head.rows.length) p.appendChild(hc);
+        if (head.bad.length) p.appendChild(note('bad', head.bad.join('\n')));
+        if (head.warn.length) p.appendChild(note('warn', head.warn.join('\n')));
+        add(p, el('h2', null, L('الأصناف المرتجعة', 'Items returned') + ' (' + used.length + ')'), linesCard(kind, used), el('h2', null, L('الإجمالي', 'Totals')), totalsCard(kind, tot, used));
+        var row = el('div', 'row2'), sv = el('button', 'btn', L('حفظ في SMACC', 'Save in SMACC')), bk = el('button', 'btn ghost', L('رجوع للتعديل', 'Back to edit'));
+        if (head.bad.length || !used.length) { sv.disabled = true; sv.style.opacity = '.45'; }
+        bk.addEventListener('click', function () { closeSheet(); redraw(); });
+        sv.addEventListener('click', function () { if (!sv.disabled) saveMade(p, kind, F, null, tot, redraw); });
+        add(p, add(row, bk, sv));
+      })().catch(function (e) {
+        if (e && e.auth) { closeSheet(); showLogin(); return; }
+        failSheet(p, L('تعذر تجهيز المرتجع في SMACC: ', 'SMACC could not prepare the return: ') + ((e && e.message) || ''), redraw);
+      });
+    });
   }
 
   /* a customer's invoices: the invoices screen opens with the name already searched */

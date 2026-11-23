@@ -9,9 +9,18 @@ The app opens on its own screens (`app/src/main/assets/app/`): sign-in, home wit
 invoices, returns, quotations, purchases, stock transfers, items (price, cost, stock per branch), customers,
 a sales report and settings (language, colour, dark mode, text size, automatic sign-in). Tapping a document
 opens it in the app: header, every item line, discount, VAT and totals; returns link to their invoice.
-Print / PDF sends SMACC's own print of the invoice straight to Android's print screen.
-They read from SMACC with your login and never save anything. Creating or editing a document still opens
-SMACC's own screen with the ZOD extension (native versions come from recordings of real saves).
+Print / PDF loads SMACC's own print of the document out of sight (it can take up to a minute) and then
+opens Android's print screen (print or Save as PDF).
+
+**New documents in the app:** sales invoice, quotation, purchase invoice, stock transfer, sales return and
+purchase return. You pick the customer / supplier, branch, salesperson, payment and items on the app's
+screen (the draft is kept if you leave). "Review and save" has SMACC's own page for that document, opened
+out of sight, fill everything in: SMACC looks up the names, prices, stock and VAT, and the review shows
+SMACC's own figures and messages (for example not enough stock). Nothing is saved until you press
+"Save in SMACC", which presses SMACC's own Save button; the app then shows the number, with Print / PDF.
+For a return, type the invoice number (or open the invoice → "Make a return"); SMACC loads what is left
+to return. SMACC does not allow returns for invoices not yet sent to ZATCA (usually today's).
+Editing a saved document still opens SMACC's own screen.
 
 ## Install
 1. Open **Releases** → latest build → download `ZOD-SMACC.apk` on your phone.

@@ -9,6 +9,8 @@ import android.graphics.drawable.Icon
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.os.Message
 import android.print.PrintAttributes
 import android.print.PrintManager
@@ -136,8 +138,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        printView?.destroy()
-        printView = null
+        main.removeCallbacksAndMessages(null)
+        dropPrintView()
         webs.forEach { it.destroy() }
         webs.clear()
         super.onDestroy()
@@ -442,7 +444,7 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun printPage(path: String) {
             runOnUiThread {
-                if (webs.contains(w) && isApp(w.url) && path.startsWith("/Inventory/PrintReport.aspx?")) printHidden(originOf(w.url) + path)
+                if (webs.contains(w) && isApp(w.url) && path.startsWith("/Inventory/PrintReport.aspx?")) printHidden(originOf(w.url) + path, w)
             }
         }
 
@@ -502,36 +504,70 @@ class MainActivity : AppCompatActivity() {
         pm.print(name, w.createPrintDocumentAdapter(name), PrintAttributes.Builder().build())
     }
 
-    /** A print page in a WebView that is never shown: printed when the page calls print() itself, or
-     *  2.5 s after it has loaded. Kept in printView until the next print (a printing WebView must stay alive). */
+    /** A print page in a WebView the user never sees: added under the app's screen (covered by it, so
+     *  Android runs its callbacks), printed when the page calls print() itself or once SMACC has drawn the
+     *  report (#HdivMain). The app is told how it went through window.__printState. Kept in printView until
+     *  the next print (a printing WebView must stay alive). */
     private var printView: WebView? = null
+    private val main = Handler(Looper.getMainLooper())
+
+    private fun dropPrintView() {
+        printView?.let { stack.removeView(it); it.destroy() }
+        printView = null
+    }
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun printHidden(url: String) {
-        printView?.destroy()
+    private fun printHidden(url: String, from: WebView) {
+        dropPrintView()
         val v = WebView(this)
         printView = v
         v.settings.javaScriptEnabled = true
         v.settings.domStorageEnabled = true
+        stack.addView(v, 0, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        val started = System.currentTimeMillis()
         var done = false
+        fun tell(state: String) { if (webs.contains(from)) from.evaluateJavascript("window.__printState&&window.__printState('$state')", null) }
         val go = Runnable {
             if (done || printView !== v) return@Runnable
             done = true
+            tell("ready")
             val pm = getSystemService(PRINT_SERVICE) as PrintManager
-            val name = (v.title?.takeIf { it.isNotBlank() } ?: "SMACC").take(60)
+            val name = (v.title?.takeIf { it.isNotBlank() && !it.startsWith("http") } ?: "SMACC").take(60)
             pm.print(name, v.createPrintDocumentAdapter(name), PrintAttributes.Builder().build())
         }
-        v.addJavascriptInterface(PrintHook(v, go), "ZodPrint")
+        v.addJavascriptInterface(PrintHook { main.postDelayed(go, 700) }, "ZodPrint")
         if (docStart) WebViewCompat.addDocumentStartJavaScript(v, "window.print=function(){try{ZodPrint.print()}catch(e){}};", setOf(ORIGIN_RULE))
+        val check = object : Runnable {
+            override fun run() {
+                if (done || printView !== v) return
+                val waited = System.currentTimeMillis() - started
+                if (isLoginUrl(v.url)) { done = true; tell("login"); dropPrintView(); return }
+                if (waited > 120_000) { done = true; tell("timeout"); dropPrintView(); return }
+                v.evaluateJavascript(
+                    "(function(){if(document.readyState!=='complete')return 0;var m=document.getElementById('HdivMain');" +
+                        "if(m)return (m.innerText||'').trim().length;return -((document.body&&document.body.innerText)||'').length})()"
+                ) { r ->
+                    val n = r?.trim()?.toIntOrNull() ?: 0
+                    when {
+                        n > 20 -> main.postDelayed(go, 1500)                   // the report is on the page
+                        n < -200 && waited > 25_000 -> main.postDelayed(go, 500) // no #HdivMain but a full page
+                        else -> main.postDelayed(this, 1000)
+                    }
+                }
+            }
+        }
+        var watching = false
         v.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView, url: String?) { view.postDelayed(go, 2500) }
+            override fun onPageFinished(view: WebView, url: String?) {
+                if (!watching) { watching = true; main.postDelayed(check, 1000) }
+            }
         }
         v.loadUrl(url)
     }
 
-    class PrintHook(private val v: WebView, private val go: Runnable) {
+    class PrintHook(private val onPrint: () -> Unit) {
         @JavascriptInterface
-        fun print() { v.post(go) }
+        fun print() { onPrint() }
     }
 
     private fun download(url: String, ua: String?, disposition: String?, mime: String?) {
