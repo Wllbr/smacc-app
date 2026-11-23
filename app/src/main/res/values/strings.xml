@@ -41,4 +41,6 @@
     <string name="yes">Yes</string>
     <string name="no">No</string>
     <string name="auto_failed">Automatic sign-in did not work. Sign in yourself.</string>
+    <string name="file_saved">Saved in Downloads: %1$s</string>
+    <string name="scan_failed">The barcode scanner is not available on this phone. Type the code instead.</string>
 </resources>

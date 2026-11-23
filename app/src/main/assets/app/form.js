@@ -20,7 +20,9 @@ window.ZodForm = (function () {
     pi: { page: 'PurchaseInvoicePage', add: '#cpBulk_cpForm_btnAddNewItem' },
     st: { page: 'StockTransferPage', add: '#cpBulk_cpForm_btnAddNew' },
     sr: { page: 'SalesReturnPage', ret: true },
-    pr: { page: 'PurchaseReturnPage', ret: true }
+    pr: { page: 'PurchaseReturnPage', ret: true },
+    sa: { page: 'StockAdjustmentPage', add: '#cpBulk_cpForm_btnAddNew' },   // stock adjustment
+    os: { page: 'ItemCardOpeningStockPage', plain: true }                   // opening stock (one item at a time)
   };
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function num(v) { var n = parseFloat(String(v == null ? '' : v).replace(/,/g, '')); return isFinite(n) ? n : 0; }
@@ -45,7 +47,7 @@ window.ZodForm = (function () {
   function open(kind) {
     var P = PAGES[kind];
     if (!P) throw new Error('unknown document kind ' + kind);
-    var F = { kind: kind, msgs: [], saveCalls: [], auth: false, closed: false, lost: false, onLost: null };
+    var F = { kind: kind, msgs: [], saveCalls: [], custCalls: [], auth: false, closed: false, lost: false, onLost: null, fresh: false };
     var fr = document.createElement('iframe'), w = null, d = null, $ = null, loads = 0, hold = 0;
     fr.name = 'zod-app-form';
     fr.setAttribute('aria-hidden', 'true');
@@ -61,7 +63,8 @@ window.ZodForm = (function () {
     }
     function busy() {
       var ld = d.getElementById('TheLoadingOuterContainer');
-      return vis(ld) || (w.jQuery && w.jQuery.active > 0);
+      if (vis(ld) || (w.jQuery && w.jQuery.active > 0)) return true;
+      try { return !!(w.Sys && w.Sys.WebForms && w.Sys.WebForms.PageRequestManager.getInstance().get_isInAsyncPostBack()); } catch (e) { return false; }
     }
     function editing() { return !!firstVisible('.btnSaveAddUpdate'); }
     function msgsSince(n) {
@@ -88,19 +91,25 @@ window.ZodForm = (function () {
         XP.__zodForm = 1;
         var o1 = XP.open, s1 = XP.send;
         XP.open = function (m, u) {
-          try { this.__zodSave = /\/saverec$/i.test(String(u).split('?')[0]); } catch (e) { this.__zodSave = false; }
+          var path = '';
+          try { path = String(u).split('?')[0]; } catch (e) { path = ''; }
+          // a document's SaveRec, or the customer window's (CustomersPage.aspx/SaveRec, answer "...<||><new code>")
+          this.__zodSave = /\/saverec$/i.test(path) ? (/customerspage\.aspx/i.test(path) ? 'cust' : 'doc') : '';
           return o1.apply(this, arguments);
         };
         XP.send = function () {
-          if (this.__zodSave) {
-            var x = this, rec = { done: false, ans: '', status: 0, t: Date.now() };
-            F.saveCalls.push(rec);
-            x.addEventListener('loadend', function () {
-              rec.done = true; rec.status = x.status;
-              try { rec.ans = String(JSON.parse(x.responseText).d || ''); } catch (e) { rec.ans = ''; }
-            });
-          }
-          return s1.apply(this, arguments);
+          if (!this.__zodSave) return s1.apply(this, arguments);
+          var x = this, rec = { done: false, ans: '', status: 0, t: Date.now() };
+          (x.__zodSave === 'cust' ? F.custCalls : F.saveCalls).push(rec);
+          var fin = function () {
+            if (rec.done) return;
+            rec.done = true; rec.status = x.status;
+            try { rec.ans = String(JSON.parse(x.responseText).d || ''); } catch (e) { rec.ans = ''; }
+          };
+          x.addEventListener('loadend', fin);
+          var r = s1.apply(this, arguments);
+          if (x.readyState === 4) fin();   // SMACC's CallServerFunction waits for its answer (synchronous call)
+          return r;
         };
       }
     }
@@ -133,7 +142,11 @@ window.ZodForm = (function () {
         }
         patch();
         if (loads > 1) { F.lost = true; if (F.onLost) F.onLost('reload'); return; }   // SMACC moved the page itself
-        waitFor(function () { $ = w.jQuery; return $ && d.querySelector('.btnAddNew1') && d.getElementById('linkPageForm') && !busy(); }, 45000).then(function (ok) {
+        waitFor(function () {
+          $ = w.jQuery;
+          if (!$ || busy()) return false;
+          return P.plain ? d.getElementById('cpBulk_cpForm_txtWarehouseCode') : d.querySelector('.btnAddNew1') && d.getElementById('linkPageForm');
+        }, 45000).then(function (ok) {
           clearTimeout(to);
           if (!ok) { rej(new Error('SMACC page did not finish loading')); return; }
           hold = setInterval(holdTimer, 20000);
@@ -153,8 +166,9 @@ window.ZodForm = (function () {
     async function settle() { await sleep(150); await waitFor(function () { return !busy(); }, 20000); }
 
     /* a new, empty document in SMACC's page (a half-made one from an earlier try is cancelled first) */
-    F.start = async function () {
+    F.start = async function (reuse) {
       await F.ready; need();
+      if (reuse && F.fresh && editing()) return F;   // opened in advance and nothing typed in it since
       if (editing()) await F.cancel();
       var lp = d.getElementById('linkPageForm');
       if (lp) lp.click();   // with nothing loaded SMACC opens a new one by itself
@@ -166,6 +180,7 @@ window.ZodForm = (function () {
       await settle();
       await sleep(400);
       F.msgs.length = 0;
+      F.fresh = true;
       return F;
     };
     F.editing = function () { return !!d && editing(); };
@@ -202,6 +217,7 @@ window.ZodForm = (function () {
        (main.js does the same on the PC). */
     F.fill = async function (steps) {
       need();
+      F.fresh = false;
       var held = [];
       steps.forEach(function (s) {
         var ac = $(s.sel).first().data('ui-autocomplete');
@@ -241,6 +257,7 @@ window.ZodForm = (function () {
     /* one item through SMACC's item window: { code, qty, price (before VAT, optional), disc (amount, optional) } */
     F.item = async function (it) {
       need();
+      F.fresh = false;
       var before = F.msgs.length, out = { code: it.code, ok: false };
       var addBtn = $(P.add).first();
       if (!addBtn.length) { out.msg = 'no add-item button'; return out; }
@@ -323,6 +340,7 @@ window.ZodForm = (function () {
 
     /* returns: SMACC's own search for the invoice, which loads it and the quantities left to return */
     F.loadInvoice = async function (no) {
+      F.fresh = false;
       need();
       var before = F.msgs.length, box = d.getElementById('InvoiceNumber'), go = d.getElementById('btnSearchInvoice');
       if (!box || !go || box.disabled || box.readOnly) throw new Error('SMACC\'s invoice box is not open');
@@ -368,6 +386,239 @@ window.ZodForm = (function () {
       return F.lines();
     };
 
+    /* What this login is held to in this page (read after start()): SMACC's own per-user values (a branch
+       and salesman linked to the user: _linkedWarehouseCode / _linkedSalesmanCode, empty for the owner) and
+       whether SMACC has locked its branch / salesman boxes. Seen in SalesInvoicePage 23/11/2026. */
+    F.locks = function () {
+      if (!w || !d) return null;
+      var g = function (k) { try { var v = w[k]; return v == null ? '' : clean(v); } catch (e) { return ''; } };
+      var box = function (ids) {
+        for (var i = 0; i < ids.length; i++) {
+          var e = d.getElementById(ids[i]);
+          if (e) return { val: clean(e.value), off: !!(e.disabled || e.readOnly) };
+        }
+        return null;
+      };
+      return {
+        wh: g('_linkedWarehouseCode'), whName: g('_linkedWarehouseName'),
+        sm: g('_linkedSalesmanCode'), smName: g('_linkedSalesmanName'),
+        minus: g('_AllowSaleMinusStock').toLowerCase() === 'true',
+        whBox: box(['cpBulk_cpForm_WarehouseCode', 'cpBulk_cpForm_WarehouseCodeFrom']),
+        whNameBox: box(['cpBulk_cpForm_WarehouseName', 'cpBulk_cpForm_WarehouseNameFrom']),
+        toBox: box(['cpBulk_cpForm_WarehouseCodeTo']),
+        smBox: box(['cpBulk_cpForm_SalesmanCode'])
+      };
+    };
+    /* the screens this login may open: the links of SMACC's own menu (#side-menu) in this page */
+    F.pages = function () {
+      var out = {};
+      if (!d) return out;
+      Array.prototype.forEach.call(d.querySelectorAll('#side-menu a[href]'), function (a) {
+        var m = /(\w+)\.aspx/i.exec(a.getAttribute('href') || '');
+        if (m) out[m[1].toLowerCase()] = 1;
+      });
+      return out;
+    };
+
+    /* A new customer through SMACC's own window next to the invoice's customer box (#btnCustCreate).
+       The customer box is emptied first (with a customer in it SMACC opens THAT customer for editing), then
+       "new" (#a001); SMACC gives the code itself. Its own save (#a005) runs SMACC's checks (VAT number
+       format, the national address for a tax invoice, an ID number when an ID type is chosen), then
+       CollectData and CustomersPage.aspx/SaveRec (answer "...<||><new code>"), and puts the new customer in
+       the invoice. Seen on 23/11/2026 up to the save; the save itself has never been pressed from here.
+       c: { name, phone, vat, cr, city, district, street, building, postal, addNo, dry } (dry = fill only) */
+    F.newCustomer = async function (c, tax) {
+      need();
+      if (!editing()) await F.start();
+      F.fresh = false;
+      var before = F.msgs.length, n0 = F.custCalls.length, X = '#cpBulk_cpForm_NewCustomerAndAccountCreationForm1_';
+      var M = d.getElementById('TheNewCustomerAndAccountCreationForm');
+      var shut = async function () {
+        if (M && M.classList.contains('in')) { var x = M.querySelector('.close'); if (x) x.click(); else $(M).modal('hide'); }
+        await waitFor(function () { return !M || !M.classList.contains('in'); }, 4000);
+        await settle();
+      };
+      var tc = $('#cpBulk_cpForm_TaxCategoryCode');   // the invoice type decides SMACC's checks
+      if (tax && tc.length && !tc.prop('disabled') && tc.val() !== String(tax)) { tc.val(String(tax)).change(); await settle(); }
+      $('#cpBulk_cpForm_CustomerCode').val('').blur();
+      $('#cpBulk_cpForm_CustomerName').val('');
+      await settle();
+      before = F.msgs.length;   // (emptying the invoice's customer makes SMACC complain about the salesman: not about the new customer)
+      var cb = d.getElementById('btnCustCreate');
+      if (!cb || !M) return { ok: false, msg: 'SMACC\'s new customer button is not there' };
+      cb.click();
+      if (!await waitFor(function () { return M.classList.contains('in'); }, 8000)) return { ok: false, msg: msgsSince(before) || 'SMACC did not open its customer window' };
+      await settle();
+      var nb = d.getElementById('a001');
+      if (nb) nb.click();
+      await settle(); await sleep(300);
+      if (String(w._isCustomerUpdateMode) === 'true' || clean($(X + 'CustomerCode').val())) { await shut(); return { ok: false, msg: 'SMACC opened an existing customer instead of a new one' }; }
+      var set = function (id, v) {
+        if (v == null || String(v).trim() === '') return;
+        var $e = $(X + id);
+        if (!$e.length || $e.prop('disabled')) return;
+        $e.focus().val(String(v).trim()).trigger('keyup').trigger('change').blur();
+      };
+      set('CustomerName', c.name);
+      await settle();
+      set('Phone1', c.phone);
+      set('VATNumber', c.vat);
+      if (c.cr) { $(X + 'OtherBuyerID').val('CRN').change(); await settle(); set('BuyerIDValue', c.cr); }
+      set('City', c.city); set('District', c.district); set('StreetName', c.street);
+      set('BuildingNumber', c.building); set('PostalCode', c.postal); set('AdditionalNumber', c.addNo);
+      await settle();
+      var held = { name: clean($(X + 'CustomerName').val()), phone: clean($(X + 'Phone1').val()), vat: clean($(X + 'VATNumber').val()),
+        idType: clean($(X + 'OtherBuyerID').val()), cr: clean($(X + 'BuyerIDValue').val()), country: clean($(X + 'CountryName').val()) };
+      // SMACC empties a box it refuses on the way (seen 23/11/2026: a mobile already on another customer →
+      // "تليفون السجل موجود مسبقا" and the box emptied): stop rather than save the customer without it
+      var dg = function (x) { return String(x || '').replace(/\D/g, ''); }, gone = [];
+      if (!held.name) gone.push('SMACC did not keep the name');
+      if (c.phone && dg(held.phone) !== dg(c.phone)) gone.push('SMACC did not keep the mobile number');
+      if (c.vat && dg(held.vat) !== dg(c.vat)) gone.push('SMACC did not keep the VAT number');
+      if (c.cr && dg(held.cr) !== dg(c.cr)) gone.push('SMACC did not keep the CR number');
+      if (c.dry) { await shut(); return { ok: false, dry: true, held: held, gone: gone, msg: msgsSince(before) }; }
+      if (gone.length) { var why = msgsSince(before); await shut(); return { ok: false, held: held, msg: (why ? why + '\n' : '') + gone.join('\n') }; }
+      var save = d.getElementById('a005');
+      if (!save) { await shut(); return { ok: false, msg: 'SMACC\'s save button is not there' }; }
+      save.click();
+      var t0 = Date.now(), code = '';
+      for (;;) {
+        await sleep(200);
+        if (F.auth || F.lost) return { ok: false, unsure: F.custCalls.length > n0, auth: F.auth, msg: 'SMACC page changed' };
+        var calls = F.custCalls.slice(n0), last = calls[calls.length - 1];
+        if (last && last.done) {
+          if (last.ans.indexOf('<||>') >= 0) { code = clean(last.ans.split('<||>')[1]); break; }
+          if (!busy()) { await shut(); return { ok: false, msg: msgsSince(before) || last.ans || 'SMACC did not save the customer' }; }
+        }
+        var red = F.msgs.slice(before).some(function (x) { return /red|warning/i.test(x.color); });
+        if (!calls.length && red && !busy() && Date.now() - t0 > 1500) { await shut(); return { ok: false, msg: msgsSince(before) }; }   // a check stopped it
+        if (Date.now() - t0 > 45000) { await shut(); return { ok: false, unsure: calls.length > 0, msg: msgsSince(before) || 'no answer from SMACC' }; }
+      }
+      await waitFor(function () { return !M.classList.contains('in'); }, 6000);
+      await settle();
+      var inv = clean($('#cpBulk_cpForm_CustomerCode').val());
+      if (M.classList.contains('in')) await shut();
+      return { ok: true, code: code || inv, name: held.name, vat: held.vat, notes: msgsSince(before) };
+    };
+
+    /* One counted item into SMACC's stock adjustment (StockAdjustmentPage, item window
+       #TheAdjustmentDetailOuterContainer): the code (SMACC fills the name, units, quantity in hand and
+       average cost), then the counted quantity in the small unit's box (PhysicalQty2; PhysicalQty1 = 0), and
+       SMACC works out the difference and its value; then its OK. Checked on 23/11/2026: counted 3 of an
+       item with 0 in hand gave PhysicalQuantity 3, AdjustedQuantity 3, Amount = 3 x average cost. */
+    F.adjItem = async function (it) {
+      need();
+      F.fresh = false;
+      var before = F.msgs.length, out = { code: it.code, ok: false };
+      var addBtn = $(P.add).first();
+      if (!addBtn.length) { out.msg = 'no add-item button'; return out; }
+      addBtn.click();
+      var m = await waitFor(function () { return d.querySelector('.modal.in[id$="DetailOuterContainer"]'); }, 8000);
+      if (!m) { out.msg = msgsSince(before) || 'SMACC did not open its item window'; return out; }
+      await sleep(250);
+      var $m = $(m), g = function (id) { return num($m.find('#' + id).val()); };
+      $m.find('#ItemCode').val(String(it.code)).blur();
+      await waitFor(function () { return clean($m.find('#ItemName').val()) || F.msgs.length > before; }, 8000);
+      await settle();
+      out.name = clean($m.find('#ItemName').val());
+      if (!out.name) { out.msg = msgsSince(before) || 'item not found'; await closeItemWindow(m); return out; }
+      out.frac = g('UnitFraction') || 1;
+      out.inHand = $m.find('#InHandQuantity').length ? g('InHandQuantity') : g('InHandQty1') * out.frac + g('InHandQty2');
+      setBox($m.find('#PhysicalQty1'), 0);
+      setBox($m.find('#PhysicalQty2'), it.counted);
+      await settle();
+      out.physical = $m.find('#PhysicalQuantity').length ? g('PhysicalQuantity') : g('PhysicalQty1') * out.frac + g('PhysicalQty2');
+      out.adjusted = g('AdjustedQuantity');
+      out.price = g('Price');
+      out.amount = g('Amount');
+      if (Math.abs(out.physical - Number(it.counted)) > 0.0001) { out.msg = msgsSince(before) || 'SMACC did not take the counted quantity'; await closeItemWindow(m); return out; }
+      if (it.skipZero && Math.abs(out.adjusted) < 0.00001 && Math.abs(out.physical - out.inHand) < 0.00001) { await closeItemWindow(m); out.ok = true; out.skipped = true; return out; }
+      var ok = firstVisible('.OkDialog', m) || m.querySelector('.OkDialog');
+      if (!ok) { out.msg = 'no OK button'; await closeItemWindow(m); return out; }
+      ok.click();
+      if (!await waitFor(function () { return !m.classList.contains('in'); }, 8000)) {
+        out.msg = msgsSince(before) || 'SMACC did not take the item';
+        await closeItemWindow(m);
+        return out;
+      }
+      await settle();
+      out.ok = true;
+      out.note = msgsSince(before);
+      return out;
+    };
+
+    /* Opening stock (ItemCardOpeningStockPage), one item of one branch at a time, the way the page is used:
+       branch code (blur), search by item code (its own partial page update), pick it from the results;
+       SMACC then shows the base unit's average cost and the opening quantity of each unit. Seen 23/11/2026;
+       its save (btnSaveForm) has never been pressed from here. */
+    F.osLoad = async function (wh, code) {
+      need();
+      var X = '#cpBulk_cpForm_', before = F.msgs.length, $wb = $(X + 'txtWarehouseCode');
+      if (($wb.prop('disabled') || $wb.prop('readonly')) && clean($wb.val()) !== String(wh)) return { ok: false, msg: 'SMACC holds this login to another branch' };
+      if (clean($(X + 'txtWarehouseCode').val()) !== String(wh) || !clean($(X + 'txtWarehouseName').val())) {
+        $(X + 'txtWarehouseCode').val(String(wh)).blur();
+        await settle();
+        await waitFor(function () { return clean($(X + 'txtWarehouseName').val()); }, 6000);
+      }
+      if (!clean($(X + 'txtWarehouseName').val())) return { ok: false, msg: msgsSince(before) || 'SMACC did not find the branch' };
+      $(X + 'ddlSearchType').val('itemcode').change();
+      $(X + 'txtOpenSearch').val(String(code));
+      var b = d.getElementById('cpBulk_cpForm_btnOpenSearch');
+      if (!b) return { ok: false, msg: 'no search button' };
+      b.click();
+      await sleep(300); await settle();
+      var opt = await waitFor(function () {
+        return Array.prototype.filter.call(d.querySelectorAll('#cpBulk_cpForm_ddlOpenSearch option'), function (o) { return o.value === String(code); })[0] || null;
+      }, 10000);
+      if (!opt) return { ok: false, msg: msgsSince(before) || 'item not found' };
+      if (clean($(X + 'txtItemCode').val()) !== String(code)) {
+        $(X + 'ddlOpenSearch').val(String(code)).change();
+        await sleep(300); await settle();
+        await waitFor(function () { return clean($(X + 'txtItemCode').val()) === String(code); }, 10000);
+      }
+      return F.osRead();
+    };
+    F.osRead = function () {
+      var X = '#cpBulk_cpForm_';
+      var units = Array.prototype.map.call(d.querySelectorAll('[id*="ListViewDropdown_txtUnitQuantity"]'), function (q, i) {
+        var row = q.closest('tr'), fr = row && row.querySelector('[id*="txtUnitFraction"]');
+        return { i: i, qty: num(q.value), frac: fr ? num(fr.value) || 1 : 1, unit: clean(row ? row.innerText || row.textContent : ''), off: !!q.disabled };
+      });
+      var cost = $(X + 'lbBaseUnitAverageCostPrice');
+      return { ok: !!clean($(X + 'txtItemCode').val()), code: clean($(X + 'txtItemCode').val()), name: clean($(X + 'txtItemName').val()),
+        wh: clean($(X + 'txtWarehouseCode').val()), whName: clean($(X + 'txtWarehouseName').val()), date: clean($(X + 'txtDate').val()),
+        whOff: !!($(X + 'txtWarehouseCode').prop('disabled') || $(X + 'txtWarehouseCode').prop('readonly')),
+        cost: num(cost.val()), costOff: !!cost.prop('disabled'), units: units };
+    };
+    /* the quantities (one per unit, in the order of SMACC's rows) and the cost typed into SMACC's boxes */
+    F.osSet = async function (qtys, cost) {
+      need();
+      var X = '#cpBulk_cpForm_';
+      Array.prototype.forEach.call(d.querySelectorAll('[id*="ListViewDropdown_txtUnitQuantity"]'), function (q, i) {
+        if (qtys[i] != null) setBox($(q), qtys[i]);
+      });
+      if (cost != null) setBox($(X + 'lbBaseUnitAverageCostPrice'), cost);
+      await settle();
+      return F.osRead();
+    };
+    /* SMACC's own save of this page; its answer is the message it shows (green = saved) */
+    F.osSave = async function () {
+      need();
+      var before = F.msgs.length, b = d.getElementById('cpBulk_cpForm_btnSaveForm');
+      if (!b) return { ok: false, msg: 'SMACC\'s save button is not there' };
+      F.saving = true;
+      try {
+        b.click();
+        await sleep(400);
+        await waitFor(function () { return F.lost || F.auth || !busy(); }, 60000, 200);   // (a full page reload = lost)
+        await sleep(600);
+        if (F.lost || F.auth) return { ok: false, unsure: true, auth: F.auth, msg: 'SMACC page changed' };
+        var msgs = F.msgs.slice(before), red = msgs.some(function (x) { return /red|warning/i.test(x.color); });
+        var green = msgs.some(function (x) { return /green|success/i.test(x.color) || /تم الحفظ|بنجاح|success/i.test(x.text); });
+        return { ok: green && !red, unsure: !green && !red, msg: msgsSince(before), read: F.osRead() };
+      } finally { F.saving = false; F.savedAt = Date.now(); }
+    };
+
     /* SMACC's own Save button. The answer comes from SaveRec ("success||<number>"); a question SMACC asks in
        its own window on the way (onAsk) is shown by the app, and the answer pressed in SMACC's window. */
     function openModal() {
@@ -386,7 +637,7 @@ window.ZodForm = (function () {
       return { title: clean(t && t.textContent), text: clean(body ? body.innerText || body.textContent : m.innerText).slice(0, 600),
         buttons: btns.map(function (b) { return clean(b.value || b.textContent) || '?'; }), el: btns };
     }
-    F.save = function (onAsk) {
+    F.save = function (onAsk, opt) {
       need();
       return new Promise(function (res) {
         var before = F.msgs.length, n0 = F.saveCalls.length, t0 = Date.now(), asked = null, done = false, lastMsgAt = 0;
@@ -408,7 +659,12 @@ window.ZodForm = (function () {
               finish({ ok: true, no: clean(a.split('||')[1]), offline: head.indexOf('OfflineStandard') >= 0 });
               return;
             }
-            if (last.status === 200 && !openModal()) { finish({ ok: false, msg: msgsSince(before) || a || 'not saved' }); return; }
+            if (last.status === 200 && !openModal()) {
+              var red0 = F.msgs.slice(before).some(function (x) { return /red|warning/i.test(x.color); });
+              if (opt && opt.loose && !red0 && !/error|exception|خطأ/i.test(a)) { finish({ ok: false, unsure: true, ans: a, msg: msgsSince(before) || a }); return; }
+              finish({ ok: false, msg: msgsSince(before) || a || 'not saved' });
+              return;
+            }
           }
           var m = openModal();
           if (m) {

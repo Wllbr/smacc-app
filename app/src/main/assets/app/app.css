@@ -159,3 +159,24 @@ body.login #tabs { display: none; }
 .center-t { text-align: center; }
 #sheet h3.center-t { margin-bottom: 4px; }
 .link { color: var(--acc); cursor: pointer; }
+
+/* customers, cost, counting */
+.cmeta { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 3px; }
+.cmeta .hit { color: var(--acc); font-weight: 600; }
+.row.wrap { flex-wrap: wrap; row-gap: 2px; }
+.cost { margin-inline-start: 4px; }
+.cost.bad { color: var(--bad); font-weight: 600; }
+.okc { color: var(--ok); font-weight: 600; }
+.badc { color: var(--bad); font-weight: 600; }
+.fixed { font-weight: 600; text-align: end; }
+.fixed .muted { font-weight: 400; }
+.pre { white-space: pre-line; }
+.search.row { display: flex; gap: 8px; align-items: center; }
+.search.row input { flex: 1; min-width: 0; }
+.scan { width: 46px; height: 46px; border-radius: 50%; background: var(--acc); color: var(--on-acc); flex: none; display: flex; align-items: center; justify-content: center; }
+.scan svg { width: 24px; height: 24px; fill: currentColor; }
+.row > .sinput { margin-bottom: 10px; }
+.row > .scan { margin-bottom: 10px; }
+.row2 .btn.ghost, .row2 .btn { margin-top: 10px; }
+.lines .line.tap { cursor: pointer; }
+.lines .line.tap:active { background: var(--acc-soft); }

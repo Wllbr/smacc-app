@@ -54,6 +54,45 @@ API**; everything here uses SMACC's internal page calls with the owner's own log
   - Lists used (exact SMACC calls): `AutoCompleteSearchCodeName` with `table` `INV_SalesmanNames`
     (subSupport ''), `INV_WarehouseNames` (subSupport '0'), `INV_SuppliersNames` (key = btoa(encodeURIComponent
     (text)) or '' for the first 20). Cash customer code '2' (نقدي).
+- Same branch, build 7 (2026-11-23, owner: auto sign-in broken, stuck when logged out, customer search,
+  new customer while invoicing, branch locks, transfer rights + transfer button, smoother invoice, cost +
+  stock in item search, Arabic, opening stock + stock adjustment + counting tools):
+  - **Signed out**: SMACC answers HTTP 500 "ConnectionString property has not been initialized" (or its
+    `/Login.aspx/CheckLoggedInUserSessionStatus` says so) → `post()` treats it as signed out → sign-in screen.
+  - **Rights** = the links in `#side-menu` of `/Default.aspx?type=1&showwizard=false` (DOMParser, lowercase
+    page names like `stocktransferpage`; cached 4 h, `zodapp|perms`). `can(page)` hides tiles, document
+    tabs, the transfer button, and `#/new/<kind>` shows "no access". Unknown = shown (SMACC still decides).
+  - **Locks** = SMACC globals `_linkedWarehouseCode/Name`, `_linkedSalesmanCode/Name` and the disabled
+    header boxes after "new" (`F.locks()`), learnt per kind (`zodapp|locks`) and shown as fixed rows.
+  - **Customers**: CustomersPage `LoadPageListing` search fields are `Name`, `CustomerCode`, `Phone1`,
+    `VATNumber` (NOT `CustomerName`, the old bug). Local index `zodapp|cidx` (500-row pages while idle,
+    weekly refresh); CR numbers learnt from LoadRec (`OtherBuyerID`/`BuyerIDValue`). History = sales
+    invoice/return lists searched by `CustomerName`, filtered by code. New customer = SMACC's own window
+    on SalesInvoicePage (`btnCustCreate` → `#a001` new → fields `..._NewCustomerAndAccountCreationForm1_*`
+    → `#a005` save → CustomersPage SaveRec answer `...<||><code>`). Dry-run live 23/11: SMACC empties the
+    mobile box when the number is on another customer ("تليفون السجل موجود مسبقا"); F.newCustomer then
+    stops. **Its save has never been pressed.**
+  - **Cost/stock**: `SelectItemCardUnitString { 'itemCode','unitType':'1' }` → Table[0].AverageCost;
+    `SelectItemCardCurrentStockInAllWarehouses { 'itemCode' }` → rows WarehouseCode, WarehouseName,
+    ItemCode, CurrentQuantity (checked live 23/11). Item search passes `warehouseCode` for branch stock.
+  - **Speed**: the SalesInvoicePage iframe is warmed while home is idle and kept parked; pre-started when
+    the invoice screen opens; item searches cached 45 s; redraws don't steal typing.
+  - **Stock count** (`#/inv`, `#/inv/c/<id>`, `#/inv/d/<id>`; counts in localStorage `zodapp|count|<id>`),
+    CSV export via `ZodAndroid.saveFile` (Downloads + share), camera scan via `ZodAndroid.scan` (Google
+    code scanner, no camera permission) → `window.__scanned(code)`.
+  - **Stock adjustment** (`#/new/sa/<count id>`, StockAdjustmentPage): header `cpBulk_cpForm_WarehouseCode`
+    (blur) / `WarehouseName` / `ReferenceNumber`, add `#cpBulk_cpForm_btnAddNew`, item window
+    `#ItemCode` blur → `PhysicalQty1` 0 + `PhysicalQty2` counted → SMACC fills `AdjustedQuantity`,
+    `Price` (avg cost), `Amount`. Dry-run live 23/11 (filled, read, cancelled). Items whose difference is 0
+    now are skipped. Save answer format unknown: save is "loose" and the app finds the new document by
+    its ReferenceNumber in `LoadPageListing`. **Never saved from the app.**
+  - **Opening stock** (`#/new/os`, ItemCardOpeningStockPage, a plain page): `txtWarehouseCode` blur,
+    `ddlSearchType`=itemcode, `txtOpenSearch`, `btnOpenSearch`, pick in `ddlOpenSearch`; units
+    `ListViewDropdown_txtUnitQuantity_<i>` / `txtUnitFraction_<i>`; cost `lbBaseUnitAverageCostPrice`
+    (0 when the item has no opening cost; the app offers the average cost); save `btnSaveForm`, then the
+    item is loaded again to compare. Load dry-run live 23/11. **Never saved from the app.**
+  - Tested: mock server + stand-in engine for every screen (scratch, not committed); live read-only/dry
+    checks above. NOT tested on a phone (no device attached on 23/11).
 - Still opening SMACC's own web screen: editing a saved document, and the login page only for an SMS
   code / picture code.
 - `extension/` + `android-js/` + `tools/build_bundle.py`: the Chrome extension bundled into
@@ -124,7 +163,10 @@ until recordings cover those.
 
 ## Next steps
 0. Owner: make one real cash sale from the app with "Record for Claude" on; check it in SMACC; send the
-   recording. Then a return the same way. Fix whatever differs before relying on it.
+   recording. Then a return the same way. Fix whatever differs before relying on it. Same for the first
+   new customer, the first stock adjustment and the first opening stock entry.
+0b. Test on the owner's phone over USB (adb in the session scratchpad; owner offered): auto sign-in,
+   sign-out recovery, scanner, CSV save/share, language switch (AppCompat recreates the activity once).
 1. Get recordings (phone recorder, or on PC: Claude in Chrome with the owner logged in, or a HAR
    started after login) of: a cash invoice for a walk-in customer with two items; an invoice for a
    VAT-registered customer; opening an existing sales and purchase invoice; a sales return; a stock

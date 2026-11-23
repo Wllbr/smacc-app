@@ -2,6 +2,7 @@ package com.wllbr.smacc
 
 import android.annotation.SuppressLint
 import android.app.DownloadManager
+import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.ShortcutInfo
 import android.content.pm.ShortcutManager
@@ -14,6 +15,7 @@ import android.os.Looper
 import android.os.Message
 import android.print.PrintAttributes
 import android.print.PrintManager
+import android.provider.MediaStore
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -40,6 +42,8 @@ import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
 import androidx.core.view.isVisible
 import androidx.core.widget.doAfterTextChanged
 import androidx.security.crypto.EncryptedSharedPreferences
@@ -48,6 +52,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.google.android.material.progressindicator.LinearProgressIndicator
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -153,6 +158,10 @@ class MainActivity : AppCompatActivity() {
     private fun appUrl() = originOf(homeUrl()) + "/zod-app/index.html"
 
     private fun isApp(url: String?): Boolean = isSmacc(url) && (Uri.parse(url).path ?: "").startsWith("/zod-app/")
+
+    /** WebViews now showing the app's own screens (readable from the bridge's thread, unlike WebView.url). */
+    private val appPages = java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<WebView, Boolean>())
+    private fun isAppPage(w: WebView) = appPages.contains(w)
 
     private fun isLoginUrl(url: String?): Boolean = isSmacc(url) && (Uri.parse(url).path ?: "").contains("login", ignoreCase = true)
 
@@ -277,6 +286,7 @@ class MainActivity : AppCompatActivity() {
         val i = webs.indexOf(w)
         if (i <= 0) return   // the first page always stays
         webs.removeAt(i)
+        appPages.remove(w)
         stack.removeView(w)
         w.destroy()
         cur.visibility = View.VISIBLE
@@ -318,6 +328,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onPageStarted(view: WebView, url: String?, favicon: android.graphics.Bitmap?) {
+            if (isApp(url)) appPages.add(view) else appPages.remove(view)
             if (webs.isNotEmpty() && view === cur) updateBars()
         }
 
@@ -445,6 +456,60 @@ class MainActivity : AppCompatActivity() {
         fun printPage(path: String) {
             runOnUiThread {
                 if (webs.contains(w) && isApp(w.url) && path.startsWith("/Inventory/PrintReport.aspx?")) printHidden(originOf(w.url) + path, w)
+            }
+        }
+
+        /** The app's language (Settings) for Android's own parts too: buttons, messages, the print screen. */
+        @JavascriptInterface
+        fun setLang(lang: String) {
+            val tag = if (lang == "en") "en" else "ar"
+            runOnUiThread {
+                if (!webs.contains(w) || !isApp(w.url)) return@runOnUiThread
+                val cur = AppCompatDelegate.getApplicationLocales().toLanguageTags()
+                if (!cur.startsWith(tag)) AppCompatDelegate.setApplicationLocales(LocaleListCompat.forLanguageTags(tag))
+            }
+        }
+
+        /** A file the app's screen made (a stock count as CSV): saved in Downloads, then offered to share. */
+        @JavascriptInterface
+        fun saveFile(name: String, mime: String, text: String): Boolean {
+            if (!isAppPage(w)) return false
+            val safe = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(80)
+            return try {
+                val values = ContentValues().apply {
+                    put(MediaStore.Downloads.DISPLAY_NAME, safe)
+                    put(MediaStore.Downloads.MIME_TYPE, mime)
+                }
+                val uri = contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false
+                contentResolver.openOutputStream(uri)?.use { it.write(text.toByteArray(Charsets.UTF_8)) } ?: return false
+                runOnUiThread {
+                    toast(getString(R.string.file_saved, safe))
+                    try {
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = mime
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        startActivity(Intent.createChooser(send, safe))
+                    } catch (e: Exception) { /* saved in Downloads anyway */ }
+                }
+                true
+            } catch (e: Exception) { false }
+        }
+
+        /** Barcode with the camera (Google's scanner: no camera permission for this app). The code goes back
+         *  through window.__scanned(code); '' = cancelled or not available. */
+        @JavascriptInterface
+        fun scan() {
+            runOnUiThread {
+                if (!isAppPage(w)) return@runOnUiThread
+                fun back(code: String) { if (webs.contains(w)) w.evaluateJavascript("window.__scanned&&window.__scanned(${JSONObject.quote(code)})", null) }
+                try {
+                    GmsBarcodeScanning.getClient(this@MainActivity).startScan()
+                        .addOnSuccessListener { b -> back(b.rawValue ?: "") }
+                        .addOnCanceledListener { back("") }
+                        .addOnFailureListener { toast(getString(R.string.scan_failed)); back("") }
+                } catch (e: Exception) { toast(getString(R.string.scan_failed)); back("") }
             }
         }
 

@@ -22,6 +22,31 @@ For a return, type the invoice number (or open the invoice → "Make a return");
 to return. SMACC does not allow returns for invoices not yet sent to ZATCA (usually today's).
 Editing a saved document still opens SMACC's own screen.
 
+**Arabic first.** The app starts in Arabic (right to left); Settings → Language switches to English, and
+Android's own buttons and messages follow.
+
+**Customers.** Search by name, mobile, VAT number, CR number or code. The customer list is kept on the
+phone (filled in the background, refreshed weekly) so mobile and CR searches are instant. A customer's
+card shows their invoices, returns, totals and the items they bought. "+ New customer" works from the
+customers screen and while making an invoice: name and mobile, plus VAT / CR and address for a VAT
+customer; it warns about duplicates and is created through SMACC's own customer window.
+
+**Making an invoice.** Item search shows the price, the average cost (red when the price is below it;
+Settings → Show cost) and the stock in the invoice's branch; each line shows its branch stock and is
+marked when there is not enough. Barcode scanning with the camera. When SMACC holds a user to one
+branch or salesperson, the app shows it fixed instead of a choice. Users with transfer rights in SMACC
+get "Transfer stock to this branch": it finds the branch that has the missing items and makes a stock
+transfer draft. Tiles and pages a user has no rights to in SMACC are hidden. The invoice page is made
+ready while the home screen is idle so review is quicker (Settings → Keep the invoice page ready).
+
+**Stock count, adjustments, opening stock.** Stock count (جرد المخزون): pick the branch, scan or type
+codes; quick mode adds 1 per scan; blind count hides SMACC's quantity. "Differences" compares with
+SMACC's quantity and values surplus and shortage at average cost; export to Excel (CSV); send the
+differences to SMACC as a stock adjustment (تسوية مخزون), which shows SMACC's own figures before
+saving and finds the saved number afterwards. The adjustments list shows SMACC's adjustments. Opening
+stock (مخزون أول المدة) enters each item's quantity per unit and cost through SMACC's own page, and can
+take quantities from a count. Counts stay on the phone until deleted.
+
 ## Install
 1. Open **Releases** → latest build → download `ZOD-SMACC.apk` on your phone.
 2. Open it and allow "install unknown apps" for your browser when Android asks.

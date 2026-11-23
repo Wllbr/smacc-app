@@ -40,4 +40,6 @@
     <string name="yes">نعم</string>
     <string name="no">لا</string>
     <string name="auto_failed">لم ينجح الدخول التلقائي. سجّل الدخول بنفسك.</string>
+    <string name="file_saved">حُفظ في التنزيلات: %1$s</string>
+    <string name="scan_failed">ماسح الباركود غير متوفر على هذا الجوال. اكتب الرمز بدلاً من ذلك.</string>
 </resources>
