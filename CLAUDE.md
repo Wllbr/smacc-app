@@ -99,8 +99,8 @@ API**; everything here uses SMACC's internal page calls with the owner's own log
     TransactionTooLargeException → Android killed the app whenever it went behind another screen (seen when
     the barcode scanner opened; also hits after switching apps). Now only the URL is kept (`zod_url`).
   - **CR numbers**: SMACC's customer list has CCRNumber for ~4 of 14,497 customers. A background reader
-    (`crStep`) reads `CustomersPage LoadRec` for customers with a VAT number while the app is idle (one per
-    0.7 s), keeping `[OtherBuyerID, BuyerIDValue]` in `zodapp|cbm` (`['','']` = read, none).
+    (`crStep`) reads `CustomersPage LoadRec` for customers with a VAT number while the app is idle (one every
+    0.4 s; on the phone 27 of the first 38 cards had a CR), keeping `[OtherBuyerID, BuyerIDValue]` in `zodapp|cbm` (`['','']` = read, none).
   - Branch and salesperson lists kept on the phone (`zodapp|list|<table>`), refreshed behind: the invoice
     screen drew in 0.7 s on a cold start, waiting for them.
   - Measured on the phone: customer search by name / mobile / VAT / code 0.1–0.25 s; item search 0.6 s,

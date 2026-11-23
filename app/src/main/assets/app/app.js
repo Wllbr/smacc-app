@@ -852,7 +852,7 @@
       CBM[r.c] = e;
       r.bt = e[0]; r.b = e[1]; r.rd = digitsOf(r.r) + ' ' + digitsOf(r.b);
       if (++crN % 25 === 0) crKeep();
-      crLater(700);
+      crLater(400);
     }, function (e) {
       crBusy = false;
       crKeep();
@@ -1530,7 +1530,7 @@
   function homeBg() {   // after the home screen loaded (signed in): permissions, the customer list, the invoice page
     loadPerms(false).then(function (changed) { if (changed && route()[0] === 'home' && !document.body.classList.contains('sheet')) render(); });
     if (!cxT && !cxBusy) cxLater(6000);
-    if (!crT && !crBusy) crLater(20000);
+    if (!crT && !crBusy) crLater(8000);
     setTimeout(warmSi, 3500);
   }
 
