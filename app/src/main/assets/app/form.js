@@ -22,7 +22,8 @@ window.ZodForm = (function () {
     sr: { page: 'SalesReturnPage', ret: true },
     pr: { page: 'PurchaseReturnPage', ret: true },
     sa: { page: 'StockAdjustmentPage', add: '#cpBulk_cpForm_btnAddNew' },   // stock adjustment
-    os: { page: 'ItemCardOpeningStockPage', plain: true }                   // opening stock (one item at a time)
+    os: { page: 'ItemCardOpeningStockPage', plain: true },                  // opening stock (one item at a time)
+    ic: { page: 'ItemCardMasterPage', item: true }                          // item card: extra barcodes of an item
   };
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
   function num(v) { var n = parseFloat(String(v == null ? '' : v).replace(/,/g, '')); return isFinite(n) ? n : 0; }
@@ -145,6 +146,7 @@ window.ZodForm = (function () {
         waitFor(function () {
           $ = w.jQuery;
           if (!$ || busy()) return false;
+          if (P.item) return d.getElementById('cpBulk_cpForm_ddlOpenSearch') && d.querySelector('.btnUpdate1');
           return P.plain ? d.getElementById('cpBulk_cpForm_txtWarehouseCode') : d.querySelector('.btnAddNew1') && d.getElementById('linkPageForm');
         }, 45000).then(function (ok) {
           clearTimeout(to);
@@ -617,6 +619,96 @@ window.ZodForm = (function () {
         var green = msgs.some(function (x) { return /green|success/i.test(x.color) || /تم الحفظ|بنجاح|success/i.test(x.text); });
         return { ok: green && !red, unsure: !green && !red, msg: msgsSince(before), read: F.osRead() };
       } finally { F.saving = false; F.savedAt = Date.now(); }
+    };
+
+    /* ---------- item card: one more barcode for an item ----------
+       SMACC keeps extra barcodes for each unit of an item: units tab → the barcode button on the unit's row →
+       its "إضافة باركود" window (a list; "تم" puts it on the row). The item code and the unit code stay as they
+       are. The app works that window like a person: open the item, تحديث, units tab, barcode button, إضافة
+       باركود, type the barcode (SMACC checks it on leaving the box), تم, then SMACC's own Save. Every step up to
+       Save was run on SMACC's page on 23/11/2026 (item 020004, then cancelled: nothing saved); Save itself has
+       never been pressed from here. The barcode is then read back from SMACC to be sure it was kept. */
+    F.icShown = function () { return d ? clean($('#cpBulk_cpForm_ItemCode').val()) : ''; };
+    F.icLoad = async function (code) {   // shows the item read-only in SMACC's page (as its own open search does)
+      await F.ready; need();
+      code = String(code);
+      if (editing()) await F.cancel();
+      if (F.icShown() === code) return true;
+      var ddl = $('#cpBulk_cpForm_ddlOpenSearch');
+      if (!ddl.length) return false;
+      if (!ddl.find('option').filter(function () { return this.value === code; }).length) ddl.append($('<option>').val(code).text(code));
+      ddl.val(code).change();
+      await sleep(300); await settle();
+      return !!await waitFor(function () { return F.icShown() === code && !busy(); }, 15000);
+    };
+    function icRow(unit) {
+      return $('#grvItemCartUnitDetails .gridRow').filter(function () { return clean($(this).find('.unitType').val()) === String(unit || 1); }).first();
+    }
+    function icCodes(row) {
+      try { var a = JSON.parse(row.find('.AddViewBarCode').attr('data-itemcardbarcodedetails') || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+    }
+    F.icBarcodes = function () { return icCodes(icRow(1)).map(function (x) { return clean(x.ItemCardCode); }).filter(Boolean); };
+    /* opt.dry: every step, then SMACC's Cancel (nothing saved). opt.onAsk: a question SMACC asks while saving. */
+    F.icAddBarcode = async function (code, bc, opt) {
+      opt = opt || {};
+      await F.ready; need();
+      code = String(code); bc = clean(bc);
+      var before = F.msgs.length;
+      if (!await F.icLoad(code)) return { ok: false, msg: msgsSince(before) || 'SMACC did not open the item' };
+      if ($('#cpBulk_cpForm_SubItemSupport').is(':checked')) return { ok: false, msg: 'this is a category, not an item' };
+      if (!icRow(1).length) return { ok: false, msg: 'the item has no unit' };
+      if (F.icBarcodes().some(function (x) { return x.toLowerCase() === bc.toLowerCase(); })) return { ok: true, already: true };
+      var up = firstVisible('.btnUpdate1');
+      if (!up) return { ok: false, msg: 'no edit button: this login may not change items' };
+      up.click();
+      if (!await waitFor(editing, 10000)) return { ok: false, msg: msgsSince(before) || 'SMACC did not open the item for changes' };
+      await settle();
+      var mo = null;
+      var stop = async function (m) {   // SMACC's own الغاء in its window, then its Cancel: nothing kept
+        try { if (mo && mo.classList.contains('in')) { var cb = mo.querySelector('#btnCancelDialog'); if (cb) cb.click(); await sleep(400); } } catch (e) { /* ignore */ }
+        await F.cancel();
+        return { ok: false, msg: msgsSince(before) || m };
+      };
+      $('a[href="#tabUnits"]').click();   // SMACC unlocks the unit boxes once the units tab is shown
+      await sleep(600);
+      var b = icRow(1).find('.AddViewBarCode')[0];
+      if (!vis(b) || b.disabled) return stop('SMACC\'s barcode button is not there');
+      b.click();
+      mo = await waitFor(function () { var m = d.getElementById('BarCodeModal'); return m && m.classList.contains('in') ? m : null; }, 4000);
+      if (!mo) return stop('SMACC did not open its barcode window');
+      await sleep(300);
+      var n0 = mo.querySelectorAll('tbody tr').length, addB = mo.querySelector('#btnAddBarCodesExtended');
+      if (!addB || addB.disabled) return stop('SMACC\'s add barcode button is not there');
+      addB.click();
+      var inp = await waitFor(function () {
+        var r = mo.querySelectorAll('tbody tr');
+        return r.length > n0 ? r[r.length - 1].querySelector('input.AllowForwardSlashChar') : null;
+      }, 3000);
+      if (!inp) return stop('SMACC did not add a barcode line');
+      $(inp).val(bc).blur();   // SMACC checks the barcode on leaving the box
+      await sleep(250);
+      var okB = mo.querySelector('#btnOkDialog');
+      if (clean(inp.value) !== bc || /Textbox_EntryError/.test(inp.className) || !okB || okB.disabled) return stop('SMACC did not accept the barcode');
+      okB.click();
+      await waitFor(function () { return !mo.classList.contains('in'); }, 3000);
+      await sleep(200);
+      if (!F.icBarcodes().some(function (x) { return x === bc; })) return stop('SMACC did not accept the barcode');
+      if (opt.dry) { var seen = F.icBarcodes(); await F.cancel(); return { ok: true, dry: true, held: seen, msg: msgsSince(before) }; }
+      var r = await F.save(opt.onAsk, { loose: true });
+      await sleep(300); await settle();
+      if (editing()) await F.cancel();   // SMACC refused: leave its page clean for the next one
+      var kept = null;
+      try {
+        var res = await fetch('/Inventory/ItemCardMasterPage.aspx/GetItemCardCodesExtendedByItemCode', {
+          method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json; charset=utf-8' },
+          body: "{ 'itemCode' : '" + code.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + "'}"
+        });
+        var j = res.ok ? await res.json() : null, a = j && j.d ? JSON.parse(j.d) : [];
+        kept = (Array.isArray(a) ? a : []).some(function (x) { return clean(x.ItemCardCode) === bc; });
+      } catch (e) { kept = null; }
+      if (kept) return { ok: true, msg: r.notes || '' };
+      if (kept === false) return { ok: false, auth: r.auth, msg: r.msg || r.notes || 'not saved' };   // SMACC does not have it
+      return { ok: false, unsure: true, auth: r.auth, msg: r.msg || r.notes || 'no answer from SMACC' };
     };
 
     /* SMACC's own Save button. The answer comes from SaveRec ("success||<number>"); a question SMACC asks in

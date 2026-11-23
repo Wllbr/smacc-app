@@ -45,7 +45,11 @@ SMACC's quantity and values surplus and shortage at average cost; export to Exce
 differences to SMACC as a stock adjustment (تسوية مخزون), which shows SMACC's own figures before
 saving and finds the saved number afterwards. The adjustments list shows SMACC's adjustments. Opening
 stock (مخزون أول المدة) enters each item's quantity per unit and cost through SMACC's own page, and can
-take quantities from a count. Counts stay on the phone until deleted.
+take quantities from a count. Counts stay on the phone until deleted. Items with no barcode: find the item by
+name and scan its barcode in the item's window (or scan first, then pick the item by name). The app adds it to
+the item in SMACC as an extra barcode (item card → units → إضافة باركود), one at a time in the background, and
+reads it back to be sure; SMACC's item search then finds the item by it on every phone and on the PC. Needs the
+item card page in SMACC.
 
 ## Install
 1. Open **Releases** → latest build → download `ZOD-SMACC.apk` on your phone.

@@ -105,6 +105,28 @@ API**; everything here uses SMACC's internal page calls with the owner's own log
     screen drew in 0.7 s on a cold start, waiting for them.
   - Measured on the phone: customer search by name / mobile / VAT / code 0.1–0.25 s; item search 0.6 s,
     cost for the first 15 within 3 s; invoice screen 0.05 s when warm.
+- Build 10 (2026-11-23, owner: "our items don't have barcodes; we want to scan and add them to the item while
+  we do the count; we will choose the products by searching by name"):
+  - SMACC's item card: each unit row has a unit code (`.ItemUnitCode`, required, = the item code by default) and
+    a barcode button `.AddViewBarCode` (units tab, edit mode) that opens `#BarCodeModal` "إضافة باركود": a list of
+    extra barcodes (`#btnAddBarCodesExtended` adds a line, input `.AllowForwardSlashChar` maxlength 40,
+    onblur `CheckItemCardCodeIsExists` = client-only check within this item; `#btnOkDialog` "تم" writes
+    `data-itemcardbarcodedetails` = JSON [{ItemCode, ItemCardCode, UnitType}] on the row; the item's Save sends
+    it). Read: `ItemCardMasterPage.aspx/GetItemCardCodesExtendedByItemCode` `{ 'itemCode' : 'X'}` → '' or that
+    JSON. Some items already have one (020003 → 6285002010583).
+  - `AutoCompleteSmartCodeNameSearch` finds an item by an extra barcode (name comes back with " - <unit>");
+    `isExact 'True'` returns only an exact item code or barcode (checked live). So a linked barcode works on
+    every phone and in SMACC's own invoice screen.
+  - App: count screen — scan an unknown barcode (camera, or 8–14 digits from a reader) → "pick the item by name"
+    → the item's window opens with the barcode filled; or open an item by name and scan into "باركود الصنف".
+    Checks before queueing: valid (letters/digits, no spaces — SMACC's own box took a space when set by
+    script), not the item code, not on another item (exact search), not queued for another item. Queue
+    `zodapp|bcq` on the phone; `bcRun` puts one at a time into SMACC with `form.js icAddBarcode` (open item via
+    `ddlOpenSearch`, `.btnUpdate1`, units tab, barcode button, إضافة باركود, type, تم, SMACC's Save), then reads
+    the barcodes back (ok only if SMACC has it). Only for logins with the item card page.
+  - Dry-run live 23/11 (Chrome, form.js loaded into a SMACC tab): items 020004 and 020003, every step up to Save,
+    then cancelled; server unchanged, 0 SaveRec. **The item Save has never been pressed from the app.** UI tested
+    on the mock (link, conflicts, failure, retry).
 - Still opening SMACC's own web screen: editing a saved document, and the login page only for an SMS
   code / picture code.
 - `extension/` + `android-js/` + `tools/build_bundle.py`: the Chrome extension bundled into

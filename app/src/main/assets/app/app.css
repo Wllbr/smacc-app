@@ -180,3 +180,11 @@ body.login #tabs { display: none; }
 .row2 .btn.ghost, .row2 .btn { margin-top: 10px; }
 .lines .line.tap { cursor: pointer; }
 .lines .line.tap:active { background: var(--acc-soft); }
+/* barcode linking (count) */
+.bcrow { display: flex; gap: 8px; align-items: center; margin: 6px 0; }
+.bcrow input { flex: 1; min-width: 0; height: 46px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: inherit; padding: 0 12px; font-size: 16px; outline: none; }
+.bcrow input:focus { border-color: var(--acc); }
+.bcrow .chip { height: 46px; }
+.linkish { display: block; padding: 6px 0 0; background: none; border: 0; color: var(--acc); text-decoration: underline; text-align: start; font-size: .88em; }
+.bchave { margin-top: 8px; line-height: 1.8; }
+#sheet h4 { margin: 16px 2px 4px; font-size: 1em; }
