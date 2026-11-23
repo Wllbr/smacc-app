@@ -49,7 +49,8 @@ take quantities from a count. Counts stay on the phone until deleted. Items with
 name and scan its barcode in the item's window (or scan first, then pick the item by name). The app adds it to
 the item in SMACC as an extra barcode (item card → units → إضافة باركود), one at a time in the background, and
 reads it back to be sure; SMACC's item search then finds the item by it on every phone and on the PC. Needs the
-item card page in SMACC.
+item card page in SMACC. The same works outside a count, in **Items & prices**: open an item and scan into "Item
+barcode", or scan an unknown barcode first and then pick the item by name.
 
 ## Install
 1. Open **Releases** → latest build → download `ZOD-SMACC.apk` on your phone.

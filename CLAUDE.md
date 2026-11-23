@@ -127,6 +127,10 @@ API**; everything here uses SMACC's internal page calls with the owner's own log
   - Dry-run live 23/11 (Chrome, form.js loaded into a SMACC tab): items 020004 and 020003, every step up to Save,
     then cancelled; server unchanged, 0 SaveRec. **The item Save has never been pressed from the app.** UI tested
     on the mock (link, conflicts, failure, retry).
+- Build 11 (2026-11-23, owner: "how do I add a barcode of a product in front of me when we don't do the
+  counting?"): the same barcode box (`barcodeBox`) in the Items screen's item window (`itemSheet`), and an unknown
+  scanned barcode there waits for the next item picked ("ربط" links it; no quantity involved). Links made there
+  have `cnt: ''`; the Items screen shows links waiting / not saved / saved in the last 12 h.
 - Still opening SMACC's own web screen: editing a saved document, and the login page only for an SMS
   code / picture code.
 - `extension/` + `android-js/` + `tools/build_bundle.py`: the Chrome extension bundled into

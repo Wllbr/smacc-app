@@ -670,9 +670,36 @@
     var inp = el('input'), list = el('div'), hint = L('اكتب اسم الصنف أو رمزه، أو امسح الباركود', 'Type an item name or code, or scan the barcode'), info = el('div', 'center small', hint);
     inp.type = 'search'; inp.placeholder = L('اسم الصنف أو الرمز أو الباركود', 'Item name, code or barcode'); inp.setAttribute('enterkeyhint', 'search');
     var run = 0, tm = 0;
-    add(view, add(el('div', 'search row'), inp, canScan() ? scanBtn(function (code) { if (code && alive()) { inp.value = latin(code).trim(); search(inp.value, true); } }) : null), list, info);
-    function search(t, exact) {
-      var my = ++run;
+    // a scanned barcode SMACC does not know: the next item opened gets it (after "ربط")
+    var pend = '', pendBox = el('div'), bcLine = el('button', 'linkish small');
+    bcLine.type = 'button';
+    bcLine.addEventListener('click', function () { bcListSheet(null); });
+    function setPend(t) {
+      pend = t || '';
+      pendBox.textContent = '';
+      if (!pend) return;
+      add(pendBox, add(el('div', 'note warn'), document.createTextNode(L('الباركود ', 'Barcode ')), ltr(pend),
+        document.createTextNode(L(' غير موجود على أي صنف. اكتب اسم الصنف واختره لربط هذا الباركود به.', ' is not on any item. Type the item\'s name and pick it to link this barcode to it.'))),
+        btnOf('ghost', L('إلغاء الربط', 'Cancel linking'), function () { setPend(''); inp.focus(); }));
+    }
+    function drawBcLine() {   // links waiting, not saved, or saved in the last 12 hours
+      var a = BCQ.filter(function (x) { return x.st !== 'ok' || x.at > Date.now() - 12 * 3600000; });
+      bcLine.style.display = a.length ? '' : 'none';
+      if (!a.length) return;
+      var n = function (st) { return a.filter(function (x) { return st.indexOf(x.st) >= 0; }).length; }, parts = [];
+      if (n(['ok'])) parts.push(n(['ok']) + L(' محفوظ', ' saved'));
+      if (n(['wait', 'busy'])) parts.push(n(['wait', 'busy']) + L(' قيد الحفظ', ' saving'));
+      if (n(['err', 'unsure'])) parts.push(n(['err', 'unsure']) + L(' لم يُحفظ', ' not saved'));
+      bcLine.textContent = L('باركود مربوط: ', 'Barcodes linked: ') + parts.join(' · ');
+    }
+    drawBcLine();
+    bcWatch(drawBcLine, alive);
+    if (canLink()) bcRun();   // links left from before
+    function openIt(it) { var lk = pend; setPend(''); itemSheet(it, lk); }
+    add(view, add(el('div', 'search row'), inp, canScan() ? scanBtn(function (code) { if (code && alive()) { inp.value = latin(code).trim(); search(inp.value, true, true); } }) : null), bcLine, pendBox, list, info);
+    function search(t, exact, cam) {
+      var my = ++run, qd = exact ? bcQueued(bcKey(t)) : null;
+      if (qd) { list.textContent = ''; info.textContent = ''; openIt({ code: qd.code, name: qd.name }); return; }   // linked here, maybe not in SMACC yet
       list.textContent = ''; info.textContent = '';
       list.appendChild(spinner());
       itemSearch(t, wh).then(function (rows) {
@@ -682,15 +709,17 @@
           var up = t.toUpperCase(), hit = rows.filter(function (r) { return r.code.toUpperCase() === up; })[0] || (rows.length === 1 ? rows[0] : null);
           if (hit) rows = [hit];
         }
+        // an unknown barcode (from the camera, or 8-14 digits from a barcode reader): link it to the item picked next
+        if (!rows.length && exact && canLink() && bcValid(bcKey(t)) && (cam || /^\d{8,14}$/.test(bcKey(t)))) { setPend(bcKey(t)); inp.value = ''; buzz(250); inp.focus(); return; }
         if (!rows.length) { info.textContent = L('لا توجد أصناف', 'No items found'); return; }
         var shown = rows.slice(0, 60), cards = shown.map(function (it) {
           var c = itemRow(it, wh);
-          c.addEventListener('click', function () { itemSheet(it); });
+          c.addEventListener('click', function () { openIt(it); });
           list.appendChild(c);
           return c;
         });
         fillCosts(shown, cards, function () { return alive() && my === run; });
-        if (exact && shown.length === 1) itemSheet(shown[0]);
+        if (exact && shown.length === 1) openIt(shown[0]);
         if (rows.length > 60) info.textContent = L('أول 60 صنف، اكتب أكثر للتحديد', 'First 60 items; type more to narrow down');
         if (!wh) info.textContent = (info.textContent ? info.textContent + ' · ' : '') + L('اختر فرعاً في الإعدادات ليظهر مخزونه هنا', 'Pick a branch in Settings to see its stock here');
       }).catch(function (e) { if (!alive() || my !== run) return; if (e && e.auth) showLogin(); else { list.textContent = ''; info.textContent = L('تعذر البحث', 'Search failed'); } });
@@ -704,12 +733,18 @@
     });
     setTimeout(function () { inp.focus(); }, 100);
   }
-  function itemSheet(it) {
+  function itemSheet(it, link) {   // link: a scanned barcode SMACC did not know, offered for this item
     openSheet(function (p) {
       add(p, el('h3', null, it.name), add(el('div', 'muted small'), ltr(it.code)));
-      var c = el('div', 'card'), st = el('div', 'card');
+      var c = el('div', 'card'), st = el('div', 'card'), bcWrap = el('div');
       c.appendChild(spinner());
+      if (link && canLink()) {   // the barcode first: that is what the user came for
+        add(p, add(el('div', 'note warn'), document.createTextNode(L('اضغط «ربط» ليُضاف الباركود ', 'Tap "Link" to add barcode ')), ltr(link),
+          document.createTextNode(L(' إلى هذا الصنف في SMACC.', ' to this item in SMACC.'))), bcWrap);
+      }
       add(p, c, el('h2', null, L('المخزون في كل فرع', 'Stock in each branch')), st);
+      if (!link) p.appendChild(bcWrap);
+      barcodeBox(bcWrap, it, '', link);
       var code = "'" + q(it.code) + "'";
       ws('SelectItemCardUnitString', "{ 'itemCode' : " + code + ",'unitType' : '1' }").then(function (o) {
         var u = table(o)[0] || {};
@@ -2626,6 +2661,53 @@
     });
   }
 
+  function barcodeBox(p, it, cnt, link) {   // the item's barcodes in SMACC and a box to scan one more in (bcLink)
+    var box = { input: null, linked: '' }, bcIn;
+    if (!canLink()) return box;
+    var bcHave = el('div', 'muted small bchave'), bcMsg = el('div'), known = null;
+    bcIn = el('input'); bcIn.type = 'text'; bcIn.dir = 'ltr'; bcIn.autocomplete = 'off'; bcIn.setAttribute('enterkeyhint', 'done');
+    bcIn.placeholder = L('امسح أو اكتب الباركود', 'Scan or type the barcode');
+    if (link) bcIn.value = link;
+    var showHave = function () {
+      bcHave.textContent = '';
+      add(bcHave, document.createTextNode(L('باركود الصنف في SMACC: ', 'The item\'s barcodes in SMACC: ')));
+      if (known && known.length) known.forEach(function (b, i) { if (i) bcHave.appendChild(document.createTextNode('، ')); bcHave.appendChild(ltr(b)); });
+      else bcHave.appendChild(document.createTextNode(known ? L('لا يوجد', 'none') : '…'));
+      BCQ.filter(function (y) { return y.code === it.code && y.st !== 'ok'; }).forEach(function (y) {
+        add(bcHave, document.createTextNode(' · '), ltr(y.bc), document.createTextNode(' '), bcPill(y));
+      });
+    };
+    showHave();
+    itemBarcodes(it.code).then(function (l) { known = l; showHave(); }, function () { known = []; showHave(); });
+    bcWatch(function () {   // a link of this item saved: SMACC's list again
+      showHave();
+      if (BCQ.some(function (y) { return y.code === it.code && y.st === 'ok' && y.at > Date.now() - 3000; })) itemBarcodes(it.code).then(function (l) { known = l; showHave(); }, noop);
+    }, function () { return bcHave.isConnected; });
+    var linkNow = function () {
+      var v = bcKey(bcIn.value);
+      if (!v) { bcIn.focus(); return; }
+      bcMsg.textContent = '';
+      bcMsg.appendChild(spinner());
+      bcLink(it, v, cnt).then(function (r) {
+        bcMsg.textContent = '';
+        if (r.ok) {
+          box.linked = v; bcIn.value = '';
+          bcMsg.appendChild(note('ok', r.already ? L('الباركود موجود على هذا الصنف', 'This item already has the barcode') : L('سيُحفظ الباركود في SMACC الآن', 'The barcode is being saved in SMACC')));
+          showHave();
+        } else { bcMsg.appendChild(note('bad', r.msg)); buzz(300); }
+      });
+    };
+    bcIn.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); linkNow(); } });
+    var lb = el('button', 'chip', L('ربط', 'Link'));
+    lb.type = 'button';
+    lb.addEventListener('click', linkNow);
+    add(p, el('h4', null, L('باركود الصنف', 'Item barcode')),
+      add(el('div', 'bcrow'), bcIn, canScan() ? scanBtn(function (code) { if (code) { bcIn.value = bcKey(code); linkNow(); } }) : null, lb),
+      bcMsg, bcHave);
+    box.input = bcIn;
+    return box;
+  }
+
   /* ---------- stock count (جرد), stock adjustment (تسوية مخزون) and opening stock (مخزون أول المدة) ----------
      A count is kept on this phone only until it is sent: its branch and, per item, the counted quantity and
      SMACC's quantity in hand and average cost when it was counted. "Send" makes a stock adjustment with SMACC's
@@ -2839,7 +2921,7 @@
     var x = cntFind(c, it.code);
     openSheet(function (p) {
       var have = x ? x.counted : 0, n = numIn('', have ? '+ 0' : '0'), info = el('div', 'card');
-      var bcIn = null, bcDone = '';
+      var bcB = { input: null, linked: '' };
       kv(info, L('المعدود حتى الآن', 'Counted so far'), add(el('b'), ltr(qty(have))));
       if (!c.blind) {
         var sysRow = el('div', 'muted small', L('كمية SMACC: …', 'SMACC quantity: …'));
@@ -2857,8 +2939,8 @@
         var v = readNum(n);
         if (v == null || !(v >= 0) || (!set && v === 0)) { toast(L('اكتب كمية صحيحة', 'Type a valid quantity')); return; }
         bump(c, it, v, set);
-        var b2 = bcIn ? bcKey(bcIn.value) : '';
-        if (b2 && !bcSame(b2, bcDone)) {   // a barcode typed or scanned but not linked yet: link it too
+        var b2 = bcB.input ? bcKey(bcB.input.value) : '';
+        if (b2 && !bcSame(b2, bcB.linked)) {   // a barcode typed or scanned but not linked yet: link it too
           bcLink(it, b2, c.id).then(function (r) {
             toast(r.ok ? (r.already ? L('الباركود موجود على الصنف', 'The item already has this barcode') : L('سيُحفظ الباركود في SMACC: ', 'Saving the barcode in SMACC: ') + b2) : r.msg, r.ok ? 2200 : 6000);
             if (!r.ok) buzz(300);
@@ -2870,48 +2952,7 @@
       if (have) add(p, add(el('div', 'row2'), btnOf('ghost', '= ' + L('تعيين', 'Set'), function () { done(true); }), btnOf('', '+ ' + L('إضافة', 'Add'), function () { done(false); })));
       else p.appendChild(btnOf('', L('حفظ', 'Save'), function () { done(true); }));
       n.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); done(!have); } });
-      if (canLink()) {   // the item's barcode: scan it to put it on the item in SMACC
-        var bcHave = el('div', 'muted small bchave'), bcMsg = el('div'), known = null;
-        bcIn = el('input'); bcIn.type = 'text'; bcIn.dir = 'ltr'; bcIn.autocomplete = 'off'; bcIn.setAttribute('enterkeyhint', 'done');
-        bcIn.placeholder = L('امسح أو اكتب الباركود', 'Scan or type the barcode');
-        if (link) bcIn.value = link;
-        var showHave = function () {
-          bcHave.textContent = '';
-          add(bcHave, document.createTextNode(L('باركود الصنف في SMACC: ', 'The item\'s barcodes in SMACC: ')));
-          if (known && known.length) known.forEach(function (b, i) { if (i) bcHave.appendChild(document.createTextNode('، ')); bcHave.appendChild(ltr(b)); });
-          else bcHave.appendChild(document.createTextNode(known ? L('لا يوجد', 'none') : '…'));
-          BCQ.filter(function (y) { return y.code === it.code && y.st !== 'ok'; }).forEach(function (y) {
-            add(bcHave, document.createTextNode(' · '), ltr(y.bc), document.createTextNode(' '), bcPill(y));
-          });
-        };
-        showHave();
-        itemBarcodes(it.code).then(function (l) { known = l; showHave(); }, function () { known = []; showHave(); });
-        bcWatch(function () {   // a link of this item saved: SMACC's list again
-          showHave();
-          if (BCQ.some(function (y) { return y.code === it.code && y.st === 'ok' && y.at > Date.now() - 3000; })) itemBarcodes(it.code).then(function (l) { known = l; showHave(); }, noop);
-        }, function () { return bcHave.isConnected; });
-        var linkNow = function () {
-          var v = bcKey(bcIn.value);
-          if (!v) { bcIn.focus(); return; }
-          bcMsg.textContent = '';
-          bcMsg.appendChild(spinner());
-          bcLink(it, v, c.id).then(function (r) {
-            bcMsg.textContent = '';
-            if (r.ok) {
-              bcDone = v; bcIn.value = '';
-              bcMsg.appendChild(note('ok', r.already ? L('الباركود موجود على هذا الصنف', 'This item already has the barcode') : L('سيُحفظ الباركود في SMACC الآن', 'The barcode is being saved in SMACC')));
-              showHave();
-            } else { bcMsg.appendChild(note('bad', r.msg)); buzz(300); }
-          });
-        };
-        bcIn.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); linkNow(); } });
-        var lb = el('button', 'chip', L('ربط', 'Link'));
-        lb.type = 'button';
-        lb.addEventListener('click', linkNow);
-        add(p, el('h4', null, L('باركود الصنف', 'Item barcode')),
-          add(el('div', 'bcrow'), bcIn, canScan() ? scanBtn(function (code) { if (code) { bcIn.value = bcKey(code); linkNow(); } }) : null, lb),
-          bcMsg, bcHave);
-      }
+      bcB = barcodeBox(p, it, c.id, link);
       if (x) {
         var armed = 0, del = btnOf('ghost', L('حذف من الجرد', 'Remove from the count'), function () {
           if (Date.now() - armed > 4000) { armed = Date.now(); del.textContent = L('اضغط مرة أخرى للحذف', 'Tap again to remove'); return; }
