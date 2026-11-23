@@ -67,6 +67,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         const val DEFAULT_HOME = "https://sa5.smacc.com/Default.aspx?type=1&showwizard=false"
         const val EXTRA_URL = "com.wllbr.smacc.URL"
+        private const val STATE_URL = "zod_url"
         private const val ORIGIN_RULE = "https://*.smacc.com"
     }
 
@@ -116,8 +117,8 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageButton>(R.id.tab_close).setOnClickListener { closeTop() }
 
         val start = intent?.getStringExtra(EXTRA_URL)
-        val restored = savedInstanceState != null && start == null && root.restoreState(savedInstanceState) != null
-        if (!restored) root.loadUrl(start ?: appUrl())
+        val saved = savedInstanceState?.getString(STATE_URL)?.takeIf { isSmacc(it) }
+        root.loadUrl(start ?: saved ?: appUrl())
         updateLauncherShortcuts(loadShortcuts())
     }
 
@@ -128,7 +129,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        webs.firstOrNull()?.saveState(outState)
+        // Only the address. WebView.saveState kept the whole history (each screen of the app is one entry) and
+        // went over Android's 1 MB limit: seen 23/11/2026 on the owner's phone, the app was killed
+        // (TransactionTooLargeException) as soon as the barcode scanner opened over it.
+        webs.firstOrNull()?.url?.takeIf { isSmacc(it) }?.let { outState.putString(STATE_URL, it) }
     }
 
     override fun onResume() {

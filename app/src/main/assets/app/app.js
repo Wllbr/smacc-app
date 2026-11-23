@@ -815,13 +815,52 @@
     if (!code) return;
     cxLoad();
     var t = String(rec.OtherBuyerID == null ? '' : rec.OtherBuyerID).trim().toUpperCase(), v = cxClean(rec.BuyerIDValue);
-    var e = !t || t === '0' || !v ? null : [t, v];
+    var e = !t || t === '0' || !v ? ['', ''] : [t, v];   // ['', ''] = card read, no buyer ID
     if (JSON.stringify(CBM[code] || null) !== JSON.stringify(e)) {
-      if (e) CBM[code] = e; else delete CBM[code];
+      CBM[code] = e;
       try { localStorage.setItem(CBM_KEY, JSON.stringify(CBM)); } catch (x) { /* ignore */ }
     }
     if (CX) { cxPut([cxCompact(rec)]); cxSave(); }
   }
+  /* CR numbers: SMACC's list has them for very few customers; most are only on the customer's card (LoadRec:
+     OtherBuyerID 'CRN' + BuyerIDValue). While the app is idle, the cards of customers with a VAT number are read
+     one at a time, slowly (as the PC add-on does), and kept on the phone. */
+  var crT = 0, crBusy = false, crFail = 0, crN = 0;
+  function crLater(ms) { clearTimeout(crT); crT = setTimeout(crStep, ms); }
+  function crNext(c) { for (var i = 0; i < c.rows.length; i++) { var r = c.rows[i]; if (r.v && !CBM[r.c]) return r; } return null; }
+  function crCount() {   // [read, to read] of the customers with a VAT number
+    var c = cxLoad(); if (!c) return [0, 0];
+    var a = 0, b = 0;
+    c.rows.forEach(function (r) { if (r.v) { b++; if (CBM[r.c]) a++; } });
+    return [a, b];
+  }
+  function crKeep() { try { localStorage.setItem(CBM_KEY, JSON.stringify(CBM)); } catch (x) { /* ignore */ } }
+  function crStep() {
+    crT = 0;
+    if (crBusy || document.body.classList.contains('login')) return;
+    var c = cxLoad();
+    if (!c || !c.done) { crLater(60000); return; }
+    if (!idle() || cxBusy) { crLater(4000); return; }
+    var r = crNext(c);
+    if (!r) { crKeep(); return; }   // all read
+    crBusy = true;
+    post(CUST + '/LoadRec', "{ 'key' : '" + q(r.c) + "'}").then(function (o) {
+      crBusy = false; crFail = 0;
+      o = (Array.isArray(o) ? o[0] : o) || {};
+      var t = String(o.OtherBuyerID == null ? '' : o.OtherBuyerID).trim().toUpperCase(), v = cxClean(o.BuyerIDValue);
+      var e = cxClean(o.CustomerCode) !== r.c || !t || t === '0' || !v ? ['', ''] : [t, v];
+      CBM[r.c] = e;
+      r.bt = e[0]; r.b = e[1]; r.rd = digitsOf(r.r) + ' ' + digitsOf(r.b);
+      if (++crN % 25 === 0) crKeep();
+      crLater(700);
+    }, function (e) {
+      crBusy = false;
+      crKeep();
+      if (e && e.auth) return;
+      crLater(Math.min(600000, 30000 * ++crFail));
+    });
+  }
+  document.addEventListener('visibilitychange', function () { if (document.hidden && crN) crKeep(); });
   var cxT = 0;
   function cxLater(ms) { clearTimeout(cxT); cxT = setTimeout(function () { cxT = 0; cxStep(); }, ms); }
   function cxStep() {   // one page of SMACC's customer list, while the app is idle
@@ -840,7 +879,7 @@
       c.page = p;
       if (!x.rows.length || p >= Math.ceil(x.total / c.size)) { c.done = true; c.t = Date.now(); }
       cxSave();
-      if (!c.done) cxLater(1500);
+      if (!c.done) cxLater(1500); else if (!crT && !crBusy) crLater(5000);
     }, function (e) { cxBusy = false; if (!(e && e.auth)) cxLater(60000); });
   }
   function cxTail(force) {   // new customers: the end of SMACC's list
@@ -952,6 +991,8 @@
         var dq = latin(t).replace(/[\s\-+().\/]/g, '');
         if (!r.items.length) info.textContent = L('لا يوجد عملاء', 'No customers found');
         else if (r.total > r.items.length) info.textContent = L('أول ', 'First ') + r.items.length + L(' من ', ' of ') + r.total;
+        var crc = /^\d{10}$/.test(dq) && !/^0?5/.test(dq) && CX && CX.done ? crCount() : null;
+        if (crc && !r.items.length && crc[0] < crc[1]) info.textContent += '\n' + L('أرقام السجل التجاري تُقرأ من بطاقات العملاء في SMACC أثناء فتح التطبيق: ', 'CR numbers are read from the customer cards in SMACC while the app is open: ') + Math.round(crc[0] / Math.max(1, crc[1]) * 100) + '%';
         if (/^\d{8,12}$/.test(dq) && (!CX || !CX.done)) {
           var pct = CX && CX.total ? Math.round(CX.rows.length / CX.total * 100) : 0;
           info.textContent = (info.textContent ? info.textContent + '\n' : '') + L('البحث بالسجل التجاري والجوال الثاني يكتمل بعد تحميل قائمة العملاء على الجوال (', 'Search by CR and second mobile is complete once the customer list is on the phone (') + pct + '%)';
@@ -1304,6 +1345,8 @@
     var cl = cxLoad(), cxInfo = !cl ? L('لم تُحمَّل بعد', 'Not loaded yet') : cl.done ? qty(cl.rows.length) + L(' عميل · ', ' customers · ') + dmy(new Date(cl.t)) : Math.round(cl.rows.length / Math.max(1, cl.total) * 100) + '%';
     var cxBtn = el('button', 'pill', L('تحديث', 'Update'));
     cxBtn.addEventListener('click', function () { var c0 = cxLoad(); if (c0) { c0.done = false; c0.page = 0; cxSave(); } cxLater(100); toast(L('يُحدَّث في الخلفية', 'Updating in the background')); });
+    var crc = cl && cl.done ? crCount() : null;
+    if (crc && crc[1]) cxInfo += ' · ' + L('السجل التجاري ', 'CR numbers ') + Math.round(crc[0] / crc[1] * 100) + '%';
     row(work, L('قائمة العملاء على الجوال', 'Customer list on the phone'), cxBtn, cxInfo + ' · ' + L('للبحث بالسجل التجاري والجوال الثاني', 'for search by CR and second mobile'));
     add(view, el('h2', null, L('العمل', 'Work')), work);
     ws('AutoCompleteSearchCodeName', "{'table':'INV_WarehouseNames','key':'','isExact':'False','subSupport':'0','optionalParam':''}").then(function (d) {
@@ -1359,12 +1402,18 @@
   };
   var LISTS = {};
   function codeList(tbl, sub) {   // SMACC's full lists, the same call its boxes make when opened empty
-    if (!LISTS[tbl]) {
-      LISTS[tbl] = ws('AutoCompleteSearchCodeName', "{'table':'" + tbl + "','key':'','isExact':'False','subSupport':'" + sub + "','optionalParam':''}").then(function (d) {
-        return (Array.isArray(d) ? d : []).map(function (s) { var a = String(s).split('<-|->'); return { code: String(a[0] || '').trim(), name: String(a[1] || '').trim() }; })
+    if (!LISTS[tbl]) {   // the copy kept on the phone at once (screens draw without waiting), SMACC's own list behind it
+      var key = 'zodapp|list|' + tbl, kept = null;
+      try { kept = JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { kept = null; }
+      var fresh = ws('AutoCompleteSearchCodeName', "{'table':'" + tbl + "','key':'','isExact':'False','subSupport':'" + sub + "','optionalParam':''}").then(function (d) {
+        var a = (Array.isArray(d) ? d : []).map(function (s) { var x = String(s).split('<-|->'); return { code: String(x[0] || '').trim(), name: String(x[1] || '').trim() }; })
           .filter(function (x) { return x.code; });
+        if (a.length) { try { localStorage.setItem(key, JSON.stringify(a)); } catch (e) { /* ignore */ } }
+        return a;
       });
-      LISTS[tbl].catch(function () { delete LISTS[tbl]; });
+      fresh.catch(function () { if (!(kept && kept.length)) delete LISTS[tbl]; });
+      if (kept && kept.length) { LISTS[tbl] = Promise.resolve(kept); fresh.then(function (a) { if (a.length) LISTS[tbl] = Promise.resolve(a); }, noop); }
+      else LISTS[tbl] = fresh;
     }
     return LISTS[tbl];
   }
@@ -1429,8 +1478,11 @@
     var prev = '';
     try { prev = localStorage.getItem('zodapp|user') || ''; } catch (e) { prev = ''; }
     if (prev && prev.toLowerCase() === String(user).toLowerCase()) { if (PERMS) PERMS.t = 0; return; }
-    PERMS = null; LOCKS = {};
-    try { localStorage.removeItem('zodapp|perms'); localStorage.removeItem('zodapp|locks'); } catch (e) { /* ignore */ }
+    PERMS = null; LOCKS = {}; LISTS = {};
+    try {
+      localStorage.removeItem('zodapp|perms'); localStorage.removeItem('zodapp|locks');
+      Object.keys(localStorage).forEach(function (k) { if (k.indexOf('zodapp|list|') === 0) localStorage.removeItem(k); });
+    } catch (e) { /* ignore */ }
   }
   function lockFor(kind) {
     var o = LOCKS[kind];
@@ -1478,6 +1530,7 @@
   function homeBg() {   // after the home screen loaded (signed in): permissions, the customer list, the invoice page
     loadPerms(false).then(function (changed) { if (changed && route()[0] === 'home' && !document.body.classList.contains('sheet')) render(); });
     if (!cxT && !cxBusy) cxLater(6000);
+    if (!crT && !crBusy) crLater(20000);
     setTimeout(warmSi, 3500);
   }
 

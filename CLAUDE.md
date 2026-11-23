@@ -92,7 +92,19 @@ API**; everything here uses SMACC's internal page calls with the owner's own log
     (0 when the item has no opening cost; the app offers the average cost); save `btnSaveForm`, then the
     item is loaded again to compare. Load dry-run live 23/11. **Never saved from the app.**
   - Tested: mock server + stand-in engine for every screen (scratch, not committed); live read-only/dry
-    checks above. NOT tested on a phone (no device attached on 23/11).
+    checks above.
+- Build 8 (2026-11-23, first test on the owner's phone, a OnePlus 8 / Android 13, over USB with adb + the
+  WebView's DevTools socket `webview_devtools_remote_<pid>`, `adb forward tcp:9229`):
+  - **Crash fixed**: `onSaveInstanceState` used `WebView.saveState` (the whole history, ~1.1 MB) →
+    TransactionTooLargeException → Android killed the app whenever it went behind another screen (seen when
+    the barcode scanner opened; also hits after switching apps). Now only the URL is kept (`zod_url`).
+  - **CR numbers**: SMACC's customer list has CCRNumber for ~4 of 14,497 customers. A background reader
+    (`crStep`) reads `CustomersPage LoadRec` for customers with a VAT number while the app is idle (one per
+    0.7 s), keeping `[OtherBuyerID, BuyerIDValue]` in `zodapp|cbm` (`['','']` = read, none).
+  - Branch and salesperson lists kept on the phone (`zodapp|list|<table>`), refreshed behind: the invoice
+    screen drew in 0.7 s on a cold start, waiting for them.
+  - Measured on the phone: customer search by name / mobile / VAT / code 0.1–0.25 s; item search 0.6 s,
+    cost for the first 15 within 3 s; invoice screen 0.05 s when warm.
 - Still opening SMACC's own web screen: editing a saved document, and the login page only for an SMS
   code / picture code.
 - `extension/` + `android-js/` + `tools/build_bundle.py`: the Chrome extension bundled into
