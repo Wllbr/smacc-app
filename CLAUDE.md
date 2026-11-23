@@ -18,7 +18,8 @@ API**; everything here uses SMACC's internal page calls with the owner's own log
   lists (sales invoices, sales returns, quotations, purchases, purchase returns, stock transfers), items
   (prices, cost, stock per branch), customers, reports (period totals + daily chart), settings.
   **Read-only.** Tested only against a mock built from one recording, never on a phone or live SMACC.
-- Branch `native-invoice-view-signin` (2026-11-23, not yet pushed/built): the app's own document screen
+- Branch `native-invoice-view-signin` (2026-11-23, built from the branch by a manual run = Release
+  `build-5`; not merged into main): the app's own document screen
   (`#/doc/<si|sr|sq|pi|pr|st>/<number>`: header, item lines, discount/VAT/net, return → original invoice)
   and its own sign-in screen. Print = `ZodAndroid.printPage(path)` → PrintReport loaded in a WebView that is
   never shown → Android print. Sign-in = SMACC's Login.aspx in a hidden same-origin iframe (`txtLoginID`,
