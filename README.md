@@ -5,10 +5,13 @@ customer search by name / mobile / VAT / CR with a new invoice for the customer,
 invoices, item tools, faster pages and staying logged in.
 
 ## The app's own screens
-The app opens on its own screens (`app/src/main/assets/app/`): home with today's totals, sales invoices,
-returns, quotations, purchases, stock transfers, items (price, cost, stock per branch), customers, a sales
-report and settings (language, colour, dark mode, text size, automatic sign-in). They read from SMACC with
-your login and never save anything. Creating a document opens SMACC's own screen with the ZOD extension.
+The app opens on its own screens (`app/src/main/assets/app/`): sign-in, home with today's totals, sales
+invoices, returns, quotations, purchases, stock transfers, items (price, cost, stock per branch), customers,
+a sales report and settings (language, colour, dark mode, text size, automatic sign-in). Tapping a document
+opens it in the app: header, every item line, discount, VAT and totals; returns link to their invoice.
+Print / PDF sends SMACC's own print of the invoice straight to Android's print screen.
+They read from SMACC with your login and never save anything. Creating or editing a document still opens
+SMACC's own screen with the ZOD extension (native versions come from recordings of real saves).
 
 ## Install
 1. Open **Releases** → latest build → download `ZOD-SMACC.apk` on your phone.

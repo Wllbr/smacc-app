@@ -18,8 +18,16 @@ API**; everything here uses SMACC's internal page calls with the owner's own log
   lists (sales invoices, sales returns, quotations, purchases, purchase returns, stock transfers), items
   (prices, cost, stock per branch), customers, reports (period totals + daily chart), settings.
   **Read-only.** Tested only against a mock built from one recording, never on a phone or live SMACC.
-- Still opening SMACC's own web screen (owner wants these replaced): creating any document, viewing a
-  document's item lines / print, and the login page.
+- Branch `native-invoice-view-signin` (2026-11-23, not yet pushed/built): the app's own document screen
+  (`#/doc/<si|sr|sq|pi|pr|st>/<number>`: header, item lines, discount/VAT/net, return → original invoice)
+  and its own sign-in screen. Print = `ZodAndroid.printPage(path)` → PrintReport loaded in a WebView that is
+  never shown → Android print. Sign-in = SMACC's Login.aspx in a hidden same-origin iframe (`txtLoginID`,
+  `txtPassword`, `btnLogin` click; leaving Login.aspx = signed in; `#lbMessage` = SMACC's error; captcha /
+  OTP modal → button to SMACC's own login page). "Sign in automatically" → `ZodAndroid.signedIn(u,p)`
+  saves (encrypted); next time `ZodAndroid.autoFill()` hands it back only via `window.__appFill`.
+  Tested on a mock (scratch, not committed) and the real Login.aspx structure; NOT on a phone, NOT a real login.
+- Still opening SMACC's own web screen (owner wants these replaced): creating or editing any document,
+  making a return, and the login page only for an SMS code / picture code.
 - `extension/` + `android-js/` + `tools/build_bundle.py`: the Chrome extension bundled into
   `assets/zod_bundle.js`, injected at document start on SMACC pages (not on `/zod-app/`).
 - Auto sign-in: `android-js/android.js` (login-page capture/fill) + MainActivity (EncryptedSharedPreferences).
@@ -57,7 +65,17 @@ btoa(encodeURIComponent(text)); rows `code<-|->name<-|-> | price<-|-> | stock`),
 (`table`: `INV_WarehouseNames`, `INV_SalesmanNames`), `SelectPriorityPriceChannels`, `GetSmaccDate`.
 Dashboard: `/Default.aspx/Select_Graph_FooterValues` and `GetChartData` (chart ids 408 sales, 409 sales
 returns, 403 purchases, 404 purchase returns; dates `dd/mm/yyyy`).
-Print: `/Inventory/PrintReport.aspx?page_id=403003&record_number=<btoa(invoice no)>` (sales invoice).
+Print: `/Inventory/PrintReport.aspx?page_id=403003&record_number=<btoa(invoice no)>` (sales invoice;
+the sales return page's id is 403004, from its SelectZATCAWarningAndErrors call; its print is unverified).
+
+Opening a saved document (seen 23/11/2026 in SMACC's own pages, view only): `<Page>.aspx/LoadRec`
+`{ 'key' : '<no>', 'rowIndex' : '0'}` → header JSON (~280 fields), plus per page: PurchaseInvoicePage
+adds `, 'invoiceDate' : ''`; SalesQuotationPage adds `, 'isProcessTypeCall' : 'false', 'warehouseCode' : '',
+'salesmanCode' : '', 'quotationDate' : ''`. Lines: Sales/PurchaseInvoicePage `LoadInvoiceDetails
+{ 'orderNumber' : '<no>'}`, Sales/PurchaseReturnPage `LoadReturnDetails { 'documentNumber' : '<no>'}`,
+StockTransferPage `LoadItemDetails { 'key' : '<no>'}`, SalesQuotationPage `LoadQuotationDetails { 'key' : '<no>'}`.
+PaymentType: sales 1 نقدي, 2 أجل, 3 البنك, 4 الشبكة, 6 الدفع عند الاستلام, 7 الدفع الالكتروني; purchases
+1 نقدي, 2 أجل, 3 البنك; sales return 1 نقدي, 2 على الحساب. TaxCategoryCode 1 ضريبية, 2 مبسطة.
 
 ### Saving a sales invoice (ONE sample only: credit sale, customer with VAT number, one item)
 On `/Inventory/SalesInvoicePage.aspx/`, in this order, state held in the server session:

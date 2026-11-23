@@ -1,6 +1,7 @@
 /* ZOD SMACC - the app's own screens. Served by the app at https://<your smacc host>/zod-app/, so the
    calls below go to SMACC with the phone's own login, exactly as SMACC's pages make them.
-   Everything here only READS from SMACC. Creating documents opens SMACC's own screen. */
+   Everything here only READS from SMACC (and signs in). Creating or editing a document still opens
+   SMACC's own screen: saving is only built from a recording of SMACC doing that exact save. */
 (function () {
   'use strict';
   var APP = window.ZodAndroid || null;
@@ -116,19 +117,21 @@
   function drawTabs(cur) {
     tabsEl.textContent = '';
     TABS.forEach(function (t) {
-      var b = add(el('button', cur === t[0] || (t[0] === 'docs/si' && cur.indexOf('docs') === 0) ? 'on' : ''), icon(t[1]), el('span', null, L(t[2], t[3])));
+      var b = add(el('button', cur === t[0] || (t[0] === 'docs/si' && cur.indexOf('doc') === 0) ? 'on' : ''), icon(t[1]), el('span', null, L(t[2], t[3])));
       b.addEventListener('click', function () { if (route().join('/') !== t[0]) { depth = 0; location.replace('#/' + t[0]); } });
       tabsEl.appendChild(b);
     });
   }
   function render() {
     closeSheet();
+    document.body.classList.remove('login');
     var r = route(), my = ++gen;
     view.textContent = ''; view.scrollTop = 0;
     drawTabs(r.join('/'));
     var alive = function () { return my === gen; };
     try {
       if (r[0] === 'docs') screenDocs(r[1] || 'si', alive);
+      else if (r[0] === 'doc' && r[2]) screenDoc(r[1], r[2], alive);
       else if (r[0] === 'items') screenItems(alive);
       else if (r[0] === 'customers') screenCustomers(alive);
       else if (r[0] === 'reports') screenReports(alive);
@@ -150,27 +153,163 @@
     b.addEventListener('click', retry || render);
     add(view, add(c, b));
   }
-  function showLogin() {
+  /* ---------- sign in (the app's own screen) ----------
+     The number and password typed here are put into SMACC's own login page, loaded out of sight on the
+     same address, and SMACC's own login button is pressed: SMACC does the login exactly as on its page.
+     "Remember" hands them to the app, which keeps them encrypted on this phone (Android keystore) and,
+     next time, gives them back only to this screen (window.__appFill) to sign in by itself. */
+  var signRun = 0, autoWait = 0, lastUser = '';
+  function smaccLoginPage() {   // fallback for what the app can't answer itself (a code by SMS, a picture code)
+    try { if (APP) APP.expectLogin(); } catch (e) { /* ignore */ }
+    location.href = '/Login.aspx';
+  }
+  function showLogin(msg) {
     gen++;
+    closeSheet();
+    document.body.classList.add('login');
     setBar('ZOD SMACC', false);
     view.textContent = '';
     var auto = false;
-    try { auto = !!(APP && APP.autoLogin() === 'on' && APP.hasLogin()); } catch (e) { auto = false; }
+    try { auto = !!(APP && typeof APP.autoFill === 'function' && APP.autoLogin() === 'on' && APP.hasLogin()); } catch (e) { auto = false; }
     var last = Number(sessionStorage.getItem('zodapp|autoTry') || 0);
-    var goLogin = function () {
-      try { if (APP) APP.expectLogin(); } catch (e) { /* ignore */ }
-      location.href = '/Default.aspx?type=1&showwizard=false';
-    };
-    if (auto && Date.now() - last > 60000) {
+    if (!msg && auto && Date.now() - last > 60000) {
       sessionStorage.setItem('zodapp|autoTry', String(Date.now()));
       add(view, add(el('div', 'center'), spinner(), el('div', null, L('جارٍ تسجيل الدخول…', 'Signing in…'))));
-      goLogin();
-      return;
+      var asked = false;
+      try { asked = !!APP.autoFill(); } catch (e) { asked = false; }
+      if (asked) {
+        clearTimeout(autoWait);
+        autoWait = setTimeout(function () { loginForm(L('تعذر تسجيل الدخول التلقائي', 'Automatic sign-in did not work')); }, 8000);
+        return;
+      }
     }
-    var c = add(el('div', 'center'), el('div', null, L('سجّل الدخول إلى SMACC للمتابعة', 'Sign in to SMACC to continue')));
-    var b = el('button', 'btn', L('تسجيل الدخول', 'Sign in'));
-    b.addEventListener('click', goLogin);
-    add(view, add(c, b));
+    loginForm(msg);
+  }
+  window.__appFill = function (u, p) {   // the app hands the saved login back (only to this screen)
+    clearTimeout(autoWait);
+    if (!document.body.classList.contains('login')) return;
+    signIn(String(u || ''), String(p || ''), true, true);
+  };
+  function loginForm(msg, other) {
+    clearTimeout(autoWait);
+    document.body.classList.add('login');
+    setBar('ZOD SMACC', false);
+    view.textContent = '';
+    var f = el('form', 'card signin');
+    f.setAttribute('autocomplete', 'on');
+    var mk = function (type, name, ph, ac) {
+      var i = el('input');
+      i.type = type; i.name = name; i.placeholder = ph; i.autocomplete = ac;
+      i.setAttribute('autocapitalize', 'off'); i.spellcheck = false;
+      return i;
+    };
+    var u = mk('text', 'username', L('رقم الدخول', 'Login ID'), 'username'), p = mk('password', 'password', L('كلمة المرور', 'Password'), 'current-password');
+    u.dir = 'ltr'; p.dir = 'ltr';
+    try { u.value = lastUser || localStorage.getItem('zodapp|user') || ''; } catch (e) { u.value = lastUser; }
+    var eye = el('button', 'eye', L('إظهار', 'Show'));
+    eye.type = 'button';
+    eye.addEventListener('click', function () { var on = p.type === 'password'; p.type = on ? 'text' : 'password'; eye.textContent = on ? L('إخفاء', 'Hide') : L('إظهار', 'Show'); });
+    var err = el('div', 'err', msg || '');
+    err.setAttribute('role', 'alert');
+    if (!msg) err.style.display = 'none';
+    add(f, el('div', 'brand', 'ZOD SMACC'), el('div', 'muted small', L('سجّل الدخول بحساب SMACC', 'Sign in with your SMACC account')),
+      el('label', null, L('رقم الدخول', 'Login ID')), u,
+      el('label', null, L('كلمة المرور', 'Password')), add(el('div', 'pw'), p, eye), err);
+    var remember = null;
+    if (APP) {
+      var on = true;
+      try { on = APP.autoLogin() !== 'off'; } catch (e) { on = true; }
+      remember = el('button', 'sw' + (on ? ' on' : ''));
+      remember.type = 'button';
+      remember.addEventListener('click', function () { remember.classList.toggle('on'); });
+      add(f, add(el('div', 'set'), add(el('div', 'grow'), el('div', null, L('تسجيل الدخول تلقائياً', 'Sign in automatically')),
+        el('div', 'muted small', L('يُحفظ مشفّراً على هذا الجوال فقط', 'Kept encrypted on this phone only'))), remember));
+    }
+    var go1 = el('button', 'btn', L('تسجيل الدخول', 'Sign in'));
+    go1.type = 'submit';
+    f.appendChild(go1);
+    f.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var user = latin(u.value).trim();
+      if (!user || !p.value) { err.textContent = L('اكتب رقم الدخول وكلمة المرور', 'Type your login ID and password'); err.style.display = ''; return; }
+      signIn(user, p.value, false, !!(remember && remember.classList.contains('on')));
+    });
+    add(view, f);
+    if (other) {
+      var ob = el('button', 'btn ghost', L('فتح صفحة الدخول في SMACC', 'Open SMACC\'s sign-in page'));
+      ob.addEventListener('click', smaccLoginPage);
+      view.appendChild(ob);
+    }
+    setTimeout(function () { (u.value ? p : u).focus(); }, 150);
+  }
+  function signIn(user, pass, auto, remember) {
+    var my = ++signRun, stage = 0, poll = 0, timer = 0;
+    if (!auto) lastUser = user;
+    gen++;
+    view.textContent = '';
+    add(view, add(el('div', 'center'), spinner(), el('div', null, L('جارٍ تسجيل الدخول…', 'Signing in…'))));
+    var old = document.getElementById('zod-login-frame');
+    if (old) old.remove();
+    var fr = document.createElement('iframe');
+    fr.id = 'zod-login-frame';
+    fr.setAttribute('aria-hidden', 'true');
+    fr.tabIndex = -1;
+    fr.style.cssText = 'position:fixed;left:-10000px;top:0;width:400px;height:700px;border:0;visibility:hidden;pointer-events:none';
+    var drop = function () { try { fr.src = 'about:blank'; } catch (e) { /* ignore */ } fr.remove(); };
+    var finish = function (ok, why, other) {
+      if (my !== signRun || stage === 9) return;
+      stage = 9;
+      clearInterval(poll); clearTimeout(timer);
+      setTimeout(drop, 0);
+      if (!ok) { pass = ''; loginForm(why, other); return; }
+      try { localStorage.setItem('zodapp|user', user); } catch (e) { /* ignore */ }
+      sessionStorage.removeItem('zodapp|autoTry');
+      if (APP && !auto) {
+        try { if (remember) APP.signedIn(user, pass); else if (APP.autoLogin() === 'on') APP.setAutoLogin(false); } catch (e) { /* older app */ }
+      }
+      pass = '';
+      render();
+    };
+    var off = function (w) { try { return w.location.pathname.toLowerCase().indexOf('/login.aspx') < 0 && w.location.href !== 'about:blank'; } catch (e) { return false; } };
+    fr.addEventListener('load', function () {
+      if (my !== signRun || stage === 9) return;
+      var w, d;
+      try { w = fr.contentWindow; d = fr.contentDocument; } catch (e) { finish(false, L('تعذر فتح صفحة الدخول', 'Could not open the sign-in page'), true); return; }
+      if (!w || !d || w.location.href === 'about:blank') return;
+      if (off(w)) { finish(true); return; }   // SMACC moved on from its login page: signed in
+      var id = d.getElementById('txtLoginID'), pw = d.getElementById('txtPassword'), btn = d.getElementById('btnLogin');
+      if (stage === 0) {
+        if (!id || !pw || !btn) { finish(false, L('صفحة الدخول في SMACC تغيّرت', 'SMACC\'s sign-in page has changed'), true); return; }
+        stage = 1;
+        var set = function (e, v) {
+          Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, 'value').set.call(e, v);
+          ['input', 'change'].forEach(function (t) { e.dispatchEvent(new w.Event(t, { bubbles: true })); });
+        };
+        set(id, user);
+        set(pw, pass);
+        btn.click();   // SMACC's own button: its check, then its form is sent
+        poll = setInterval(function () {
+          if (off(fr.contentWindow)) { finish(true); return; }
+          var dd = null;
+          try { dd = fr.contentDocument; } catch (e) { dd = null; }
+          var m = dd && dd.querySelector('.modal.in:not([id*="Loading"])');   // a question from SMACC without leaving the page (code by SMS…)
+          if (m) finish(false, (m.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200) || L('يطلب SMACC تحققاً إضافياً', 'SMACC asks for an extra check'), true);
+        }, 150);
+        return;
+      }
+      // the login page came back: not signed in. Show SMACC's own message.
+      var vis = function (e) { if (!e) return false; var s = w.getComputedStyle(e); return s.display !== 'none' && s.visibility !== 'hidden'; };
+      var cap = d.getElementById('captchadiv'), modal = d.querySelector('.modal.in:not([id*="Loading"])');
+      var lb = d.getElementById('lbMessage'), say = lb && vis(d.getElementById('divErrorMsg')) ? (lb.textContent || '').trim() : '';
+      if ((cap && vis(cap)) || modal) {
+        finish(false, (say || (modal && (modal.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 200)) || L('يطلب SMACC تحققاً إضافياً', 'SMACC asks for an extra check')), true);
+        return;
+      }
+      finish(false, say || L('لم يتم تسجيل الدخول. تأكد من رقم الدخول وكلمة المرور', 'Not signed in. Check your login ID and password'), !say);
+    });
+    timer = setTimeout(function () { finish(false, L('انتهى الوقت، حاول مرة أخرى', 'Timed out, try again'), true); }, 45000);
+    fr.src = '/Login.aspx';
+    document.body.appendChild(fr);
   }
 
   /* ---------- sheet ---------- */
@@ -237,17 +376,30 @@
   }
 
   /* ---------- document lists ---------- */
+  /* rec: what SMACC adds after 'rowIndex' in <page>/LoadRec (the document's header) for that page;
+     det: the call and field name SMACC uses for the document's item lines. Both exactly as SMACC's own
+     pages send them when a saved document is opened (seen 23/11/2026, view only). */
+  var PAY_S = { 1: ['نقدي', 'Cash'], 2: ['أجل', 'Credit'], 3: ['البنك', 'Bank'], 4: ['الشبكة', 'Card'], 6: ['الدفع عند الاستلام', 'Cash on delivery'], 7: ['الدفع الالكتروني', 'Online payment'] };
+  var PAY_P = { 1: ['نقدي', 'Cash'], 2: ['أجل', 'Credit'], 3: ['البنك', 'Bank'] };
+  var PAY_R = { 1: ['نقدي', 'Cash'], 2: ['على الحساب', 'On account'] };
   var DOCS = {
-    si: { url: '/Inventory/SalesInvoicePage.aspx', no: 'InvoiceNumber', date: 'InvoiceDate', who: 'CustomerName', ar: 'فواتير المبيعات', en: 'Sales invoices', print: '403003', open: true, ret: '/Inventory/SalesReturnPage.aspx', add: '#zod-new' },
-    sr: { url: '/Inventory/SalesReturnPage.aspx', no: 'DocumentNumber', date: 'DocumentDate', who: 'CustomerName', ar: 'مرتجعات المبيعات', en: 'Sales returns', open: true, ref: 'InvoiceNumber' },
-    sq: { url: '/Inventory/SalesQuotationPage.aspx', no: 'QuotationNumber', date: 'QuotationDate', who: 'CustomerName', ar: 'عروض الأسعار', en: 'Quotations' },
-    pi: { url: '/Inventory/PurchaseInvoicePage.aspx', no: 'InvoiceNumber', date: 'InvoiceDate', who: 'SupplierName', ar: 'فواتير المشتريات', en: 'Purchase invoices', open: true, ret: '/Inventory/PurchaseReturnPage.aspx' },
-    pr: { url: '/Inventory/PurchaseReturnPage.aspx', no: 'DocumentNumber', date: 'DocumentDate', who: 'SupplierName', ar: 'مرتجعات المشتريات', en: 'Purchase returns', open: true, ref: 'InvoiceNumber' },
-    st: { url: '/Inventory/StockTransferPage.aspx', no: 'DocumentNumber', date: 'DocumentDate', who: '', ar: 'تحويل المخزون', en: 'Stock transfers', transfer: true }
+    si: { url: '/Inventory/SalesInvoicePage.aspx', no: 'InvoiceNumber', date: 'InvoiceDate', who: 'CustomerName', ar: 'فواتير المبيعات', en: 'Sales invoices', one: ['فاتورة مبيعات', 'Sales invoice'],
+      print: '403003', open: true, ret: '/Inventory/SalesReturnPage.aspx', add: '#zod-new', rec: '', det: ['LoadInvoiceDetails', 'orderNumber'], pay: PAY_S, cat: true },
+    sr: { url: '/Inventory/SalesReturnPage.aspx', no: 'DocumentNumber', date: 'DocumentDate', who: 'CustomerName', ar: 'مرتجعات المبيعات', en: 'Sales returns', one: ['مرتجع مبيعات', 'Sales return'],
+      print: '403004', open: true, ref: 'InvoiceNumber', refKind: 'si', rec: '', det: ['LoadReturnDetails', 'documentNumber'], pay: PAY_R },
+    sq: { url: '/Inventory/SalesQuotationPage.aspx', no: 'QuotationNumber', date: 'QuotationDate', who: 'CustomerName', ar: 'عروض الأسعار', en: 'Quotations', one: ['عرض سعر', 'Quotation'],
+      rec: ", 'isProcessTypeCall' : 'false', 'warehouseCode' : '', 'salesmanCode' : '', 'quotationDate' : ''", det: ['LoadQuotationDetails', 'key'], cat: true },
+    pi: { url: '/Inventory/PurchaseInvoicePage.aspx', no: 'InvoiceNumber', date: 'InvoiceDate', who: 'SupplierName', ar: 'فواتير المشتريات', en: 'Purchase invoices', one: ['فاتورة مشتريات', 'Purchase invoice'],
+      open: true, ret: '/Inventory/PurchaseReturnPage.aspx', rec: ", 'invoiceDate' : ''", det: ['LoadInvoiceDetails', 'orderNumber'], pay: PAY_P },
+    pr: { url: '/Inventory/PurchaseReturnPage.aspx', no: 'DocumentNumber', date: 'DocumentDate', who: 'SupplierName', ar: 'مرتجعات المشتريات', en: 'Purchase returns', one: ['مرتجع مشتريات', 'Purchase return'],
+      open: true, ref: 'InvoiceNumber', refKind: 'pi', rec: '', det: ['LoadReturnDetails', 'documentNumber'], pay: { 1: PAY_R[1] } },
+    st: { url: '/Inventory/StockTransferPage.aspx', no: 'DocumentNumber', date: 'DocumentDate', who: '', ar: 'تحويل المخزون', en: 'Stock transfers', one: ['تحويل مخزون', 'Stock transfer'],
+      transfer: true, rec: '', det: ['LoadItemDetails', 'key'] }
   };
   var PAGE = 20, DOC_SHAPE = /^[A-Za-z]*-?\d+(-\d+)?$/;
   function screenDocs(kind, alive) {
-    var D = DOCS[kind] || DOCS.si;
+    if (!DOCS[kind]) kind = 'si';
+    var D = DOCS[kind];
     setBar(L(D.ar, D.en), true, IC.plus, function () { smacc(D.url + (D.add || '')); });
     var chips = el('div', 'chips');
     Object.keys(DOCS).forEach(function (k) {
@@ -272,7 +424,7 @@
       add(c, add(el('div', 'row'), add(el('div', 'grow clip'), ltr(String(r[D.no] || ''), 'pill')), add(el('div', 'amt'), ltr(money(amount)))),
         el('div', 'clip', who || L('بدون اسم', 'No name')),
         add(el('div', 'row muted small'), ltr(dateOf(r[D.date])), el('span', 'grow clip', D.transfer ? (qty(r.NoOfItems) + ' ' + L('صنف', 'items')) : String(r.WarehouseName || ''))));
-      c.addEventListener('click', function () { docSheet(D, r); });
+      c.addEventListener('click', function () { if (r[D.no]) go('doc/' + kind + '/' + encodeURIComponent(String(r[D.no]))); });
       return c;
     }
     function put(rows) { rows.slice().reverse().forEach(function (r) { list.appendChild(card(r)); }); }
@@ -327,25 +479,124 @@
     });
     latest();
   }
-  function docSheet(D, r) {
-    openSheet(function (p) {
-      var no = String(r[D.no] || '');
-      add(p, add(el('h3'), ltr(no)));
-      var c = el('div', 'card');
-      kv(c, L('التاريخ', 'Date'), dateOf(r[D.date]), true);
-      if (D.who) kv(c, D.who === 'SupplierName' ? L('المورد', 'Supplier') : L('العميل', 'Customer'), r[D.who]);
-      if (D.transfer) { kv(c, L('من', 'From'), r.WarehouseNameFrom); kv(c, L('إلى', 'To'), r.WarehouseNameTo); kv(c, L('عدد الأصناف', 'Items'), qty(r.NoOfItems), true); }
-      kv(c, L('الفرع', 'Branch'), r.WarehouseName);
-      kv(c, L('البائع', 'Salesman'), r.SalesmanName);
-      if (D.ref && r[D.ref]) kv(c, L('الفاتورة الأصلية', 'Original invoice'), r[D.ref], true);
-      kv(c, L('الإجمالي', 'Total'), money(D.transfer ? r.GrandAmount : (Number(r.NetAmount) || Number(r.GrandAmount) || 0)), true);
-      add(p, c);
-      var btn = function (cls, text, fn) { var b = el('button', 'btn ' + cls, text); b.addEventListener('click', fn); p.appendChild(b); };
-      if (D.print) btn('', L('عرض الفاتورة / طباعة', 'View invoice / print'), function () { smacc('/Inventory/PrintReport.aspx?page_id=' + D.print + '&record_number=' + encodeURIComponent(btoa(no))); });
-      if (D.open) btn(D.print ? 'ghost' : '', L('فتح المستند بأصنافه', 'Open with its items'), function () { smacc(D.url + '#zod-open=' + encodeURIComponent(no)); });
-      else btn('', L('فتح الشاشة في SMACC', 'Open this screen in SMACC'), function () { smacc(D.url); });
-      if (D.ret) btn('ghost', L('إرجاع', 'Make a return'), function () { smacc(D.ret + '#zod-return=' + encodeURIComponent(no)); });
+  /* ---------- one document: header, item lines and totals (the app's own screen) ---------- */
+  function num(v) { return Number(v) || 0; }
+  function screenDoc(kind, no, alive) {
+    if (!DOCS[kind]) kind = 'si';
+    var D = DOCS[kind], head = null;
+    setBar(L(D.one[0], D.one[1]), true, IC.refresh, render);
+    var box = el('div');
+    add(view, box);
+    box.appendChild(spinner());
+    post(D.url + '/LoadRec', "{ 'key' : '" + q(no) + "', 'rowIndex' : '0'" + D.rec + "}").then(function (h) {
+      if (!h || typeof h !== 'object' || String(h[D.no] || '').toUpperCase() !== no.toUpperCase()) throw new Error(L('المستند غير موجود', 'Document not found'));
+      head = h;
+      return post(D.url + '/' + D.det[0], "{ '" + D.det[1] + "' : '" + q(no) + "'}");
+    }).then(function (lines) {
+      if (!alive()) return;
+      box.textContent = '';
+      drawDoc(box, kind, head, Array.isArray(lines) ? lines : table(lines));
+    }).catch(function (e) {
+      if (!alive()) return;
+      if (e && e.auth) { showLogin(); return; }
+      box.textContent = '';
+      var c = add(el('div', 'center'), el('div', null, L('تعذر فتح المستند', 'Could not open the document')), el('div', 'small', String((e && e.message) || '')));
+      var b = el('button', 'btn', L('إعادة المحاولة', 'Try again'));
+      b.addEventListener('click', render);
+      add(box, add(c, b));
     });
+  }
+  function drawDoc(box, kind, h, lines) {
+    var D = DOCS[kind], no = String(h[D.no]);
+    lines = lines.filter(function (x) { return x && (x.ItemCode || x.ItemName); })
+      .sort(function (a, b) { return num(a.SerialNumber) - num(b.SerialNumber); });
+    var lineTotal = function (x) { return num(x.NetAmount) || num(x.GrandAmount) || num(x.Amount); };
+    var net = D.transfer ? (num(h.GrandAmount) || lines.reduce(function (s, x) { return s + lineTotal(x); }, 0)) : num(h.NetAmount);
+
+    var top = el('div', 'card');
+    add(top, add(el('div', 'row'), add(el('div', 'grow clip'), ltr(no, 'pill')), add(el('div', 'amt'), ltr(money(net)))));
+    if (D.cat && (h.TaxCategoryCode === '1' || h.TaxCategoryCode === '2' || h.TaxCategoryCode === 1 || h.TaxCategoryCode === 2)) {
+      top.appendChild(el('div', 'muted small', String(h.TaxCategoryCode) === '1' ? L('فاتورة ضريبية', 'Tax invoice') : L('فاتورة مبسطة', 'Simplified invoice')));
+    }
+    kv(top, L('التاريخ', 'Date'), dateOf(h[D.date]), true);
+    if (kind === 'sq') kv(top, L('صالح حتى', 'Valid until'), dateOf(h.QuotationDateValidUpto), true);
+    if (D.who) {
+      var name = String(h[D.who] || '').trim();
+      if (name && D.who === 'CustomerName' && h.CustomerCode) {
+        var a = el('a', null, name);
+        a.href = 'javascript:void 0';
+        a.addEventListener('click', function () { custSheet({ CustomerCode: h.CustomerCode, CustomerName: name }); });
+        kv(top, L('العميل', 'Customer'), a);
+      } else kv(top, D.who === 'SupplierName' ? L('المورد', 'Supplier') : L('العميل', 'Customer'), name);
+      kv(top, L('الرقم الضريبي', 'VAT number'), h.BuyerVATNumber || h.CustomerVAT || h.VATNumber, true);
+      if (D.who === 'CustomerName') kv(top, h.BuyerIDText || L('السجل التجاري / الهوية', 'CR / ID'), h.BuyerIDValue, true);
+      if (h.Phone1) { var ph = el('a'); ph.href = 'tel:' + String(h.Phone1).replace(/[^\d+]/g, ''); ph.appendChild(ltr(String(h.Phone1))); kv(top, L('الجوال', 'Phone'), ph); }
+    }
+    if (D.transfer) { kv(top, L('من', 'From'), h.WarehouseNameFrom); kv(top, L('إلى', 'To'), h.WarehouseNameTo); }
+    else kv(top, L('الفرع', 'Branch'), h.WarehouseName);
+    kv(top, L('البائع', 'Salesman'), h.SalesmanName);
+    var pay = D.pay && D.pay[h.PaymentType];
+    if (pay) kv(top, L('طريقة الدفع', 'Payment'), L(pay[0], pay[1]));
+    if (D.ref && h[D.ref]) {
+      var ra = el('a');
+      ra.href = 'javascript:void 0';
+      ra.appendChild(ltr(String(h[D.ref])));
+      ra.addEventListener('click', function () { go('doc/' + D.refKind + '/' + encodeURIComponent(String(h[D.ref]))); });
+      kv(top, L('الفاتورة الأصلية', 'Original invoice'), ra);
+    }
+    kv(top, L('رقم المرجع', 'Reference'), h.ReferenceNumber, true);
+    kv(top, L('ملاحظات', 'Notes'), h.Instructions);
+    kv(top, L('أعدّه', 'Prepared by'), String(h.PreparedBy || '').replace(/\s+/g, ' ').trim());
+    add(box, top);
+
+    add(box, el('h2', null, L('الأصناف', 'Items') + ' (' + lines.length + ')'));
+    var lc = el('div', 'card lines');
+    if (!lines.length) lc.appendChild(el('div', 'muted small', L('لا توجد أصناف', 'No items')));
+    lines.forEach(function (x) {
+      var unit = String(x.UnitName || '').trim();
+      var sub = add(el('div', 'row muted small'), ltr(String(x.ItemCode || '')), el('span', 'grow'),
+        add(el('span'), ltr(qty(x.Quantity)), document.createTextNode(' '), unit ? el('span', null, unit) : null, document.createTextNode(' × '), ltr(money(x.Price))));
+      var extra = [];
+      if (num(x.DiscountAmount)) extra.push(L('خصم ', 'Discount ') + money(x.DiscountAmount));
+      if (num(x.Tax1Amount)) extra.push(L('ضريبة ', 'VAT ') + money(x.Tax1Amount));
+      add(lc, add(el('div', 'line'),
+        add(el('div', 'row'), el('div', 'grow', String(x.ItemName || x.ItemCode || '').trim()), add(el('div', 'amt'), ltr(money(lineTotal(x))))),
+        sub, extra.length ? el('div', 'muted small', extra.join(' · ')) : null));
+    });
+    add(box, lc);
+
+    var tc = el('div', 'card');
+    if (D.transfer) {
+      kv(tc, L('عدد الأصناف', 'Items'), qty(h.TotalItems || h.NoOfItems || lines.length), true);
+      kv(tc, L('الكمية', 'Quantity'), qty(h.TotalQuantity), true);
+      kv(tc, L('القيمة', 'Value'), money(net), true);
+    } else {
+      var before = lines.reduce(function (s, x) { return s + (num(x.ItemAmountBeforeDiscount) || num(x.Amount)); }, 0);
+      var disc = num(h.ItemDiscountTotal) + num(h.GlobalDiscountAmount);
+      var vat = num(h.ItemTax1Total) + num(h.GlobalTax1Amount);
+      var noVat = num(h.AmountBeforeTax) || lines.reduce(function (s, x) { return s + (num(x.ItemAmountBeforeTax) || num(x.Amount)); }, 0);
+      if (disc) { kv(tc, L('المجموع قبل الخصم', 'Before discount'), money(before), true); kv(tc, L('الخصم', 'Discount'), money(disc), true); }
+      kv(tc, L('قبل الضريبة', 'Before VAT'), money(noVat), true);
+      kv(tc, L('الضريبة', 'VAT'), money(vat), true);
+      kv(tc, L('الصافي', 'Net'), add(el('b'), ltr(money(net))));
+      if (num(h.RoundOffDifference) && num(h.RoundOffAmount)) kv(tc, L('بعد التقريب', 'After rounding'), money(h.RoundOffAmount), true);
+      if (num(h.AdvanceAmount)) kv(tc, L('المبلغ المقدم', 'Paid in advance'), money(h.AdvanceAmount), true);
+    }
+    add(box, el('h2', null, L('الإجمالي', 'Totals')), tc);
+
+    var btn = function (cls, text, fn) { var b = el('button', 'btn ' + cls, text); b.addEventListener('click', fn); box.appendChild(b); };
+    if (D.print) btn('', L('طباعة / PDF', 'Print / PDF'), function () { printDoc(D.print, no); });
+    if (D.ret) btn('ghost', L('عمل مرتجع (شاشة SMACC)', 'Make a return (SMACC screen)'), function () { smacc(D.ret + '#zod-return=' + encodeURIComponent(no)); });
+    if (D.open) btn('ghost', L('تعديل في SMACC', 'Edit in SMACC'), function () { smacc(D.url + '#zod-open=' + encodeURIComponent(no)); });
+  }
+  /* SMACC's own print of the document (the same address SMACC's print button opens). In the app it is
+     loaded out of sight and goes straight to Android's print / save-as-PDF screen. */
+  function printDoc(pageId, no) {
+    var path = '/Inventory/PrintReport.aspx?page_id=' + pageId + '&record_number=' + encodeURIComponent(btoa(no));
+    if (APP && typeof APP.printPage === 'function') {
+      try { APP.printPage(path); toast(L('جارٍ تجهيز الطباعة…', 'Preparing the print…')); return; } catch (e) { /* older app: SMACC's page */ }
+    }
+    smacc(path);
   }
 
   /* ---------- items: price, cost, stock ---------- */

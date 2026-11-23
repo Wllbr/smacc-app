@@ -107,3 +107,25 @@ body.sheet #sheet { transform: none; }
 
 #toast { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); background: #263238; color: #fff; padding: 9px 16px; border-radius: 10px; font-size: .9em; opacity: 0; pointer-events: none; transition: opacity .2s; z-index: 20; max-width: 90%; text-align: center; }
 #toast.on { opacity: 1; }
+
+/* one document: item lines */
+.lines .line { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.lines .line:first-child { padding-top: 0; }
+.lines .line:last-child { border-bottom: 0; padding-bottom: 0; }
+.lines .line > .row:first-child .grow { font-weight: 500; }
+.lines .line .muted { margin-top: 2px; }
+
+/* sign in */
+body.login #tabs { display: none; }
+.signin { max-width: 440px; margin: 18px auto 0; padding: 22px 18px 18px; }
+.signin .brand { font-size: 1.5em; font-weight: 700; color: var(--acc); text-align: center; }
+.signin > .muted { text-align: center; margin-bottom: 8px; }
+.signin label { display: block; margin: 14px 2px 6px; font-size: .9em; color: var(--muted); }
+.signin input { width: 100%; height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg); padding: 0 14px; outline: none; font-size: 16px; }
+.signin input:focus { border-color: var(--acc); }
+.signin .pw { position: relative; }
+.signin .pw input { padding-right: 70px; }
+.signin .eye { position: absolute; top: 0; bottom: 0; right: 6px; padding: 0 10px; color: var(--acc); font-size: .9em; font-weight: 600; }
+.signin .err { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: rgba(198,40,40,.1); color: var(--bad); font-size: .92em; }
+.signin .set { border-bottom: 0; margin-top: 6px; }
+.signin + .btn { max-width: 440px; margin-left: auto; margin-right: auto; }

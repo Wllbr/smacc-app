@@ -136,6 +136,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        printView?.destroy()
+        printView = null
         webs.forEach { it.destroy() }
         webs.clear()
         super.onDestroy()
@@ -411,6 +413,39 @@ class MainActivity : AppCompatActivity() {
         @JavascriptInterface
         fun forgetLogin() { try { secure?.edit()?.clear()?.apply() } catch (e: Exception) { /* nothing saved */ } }
 
+        /** The app's own sign-in screen signed in with "sign in automatically" on: keep the login (encrypted). */
+        @JavascriptInterface
+        fun signedIn(user: String, pass: String) {
+            runOnUiThread {
+                if (webs.contains(w) && isApp(w.url) && user.isNotEmpty() && pass.isNotEmpty()) {
+                    prefs.edit().putString("autologin", "on").apply()
+                    saveLogin(user to pass)
+                }
+            }
+        }
+
+        /** Automatic sign-in: the saved login goes back only to the app's own screen (window.__appFill). */
+        @JavascriptInterface
+        fun autoFill(): Boolean {
+            if (autoMode() != "on" || !hasSavedLogin()) return false
+            runOnUiThread {
+                if (!webs.contains(w) || !isApp(w.url)) return@runOnUiThread
+                val s = secure ?: return@runOnUiThread
+                val u = s.getString("u", null) ?: return@runOnUiThread
+                val p = s.getString("p", null) ?: return@runOnUiThread
+                w.evaluateJavascript("window.__appFill&&window.__appFill(${JSONObject.quote(u)},${JSONObject.quote(p)})", null)
+            }
+            return true
+        }
+
+        /** SMACC's print of a document, loaded out of sight, straight to Android's print / PDF screen. */
+        @JavascriptInterface
+        fun printPage(path: String) {
+            runOnUiThread {
+                if (webs.contains(w) && isApp(w.url) && path.startsWith("/Inventory/PrintReport.aspx?")) printHidden(originOf(w.url) + path)
+            }
+        }
+
         @JavascriptInterface
         fun setRecording(on: Boolean) { runOnUiThread { if (prefs.getBoolean("rec", false) != on) toggleRecording() } }
 
@@ -465,6 +500,38 @@ class MainActivity : AppCompatActivity() {
         val pm = getSystemService(PRINT_SERVICE) as PrintManager
         val name = (w.title?.takeIf { it.isNotBlank() } ?: "SMACC").take(60)
         pm.print(name, w.createPrintDocumentAdapter(name), PrintAttributes.Builder().build())
+    }
+
+    /** A print page in a WebView that is never shown: printed when the page calls print() itself, or
+     *  2.5 s after it has loaded. Kept in printView until the next print (a printing WebView must stay alive). */
+    private var printView: WebView? = null
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun printHidden(url: String) {
+        printView?.destroy()
+        val v = WebView(this)
+        printView = v
+        v.settings.javaScriptEnabled = true
+        v.settings.domStorageEnabled = true
+        var done = false
+        val go = Runnable {
+            if (done || printView !== v) return@Runnable
+            done = true
+            val pm = getSystemService(PRINT_SERVICE) as PrintManager
+            val name = (v.title?.takeIf { it.isNotBlank() } ?: "SMACC").take(60)
+            pm.print(name, v.createPrintDocumentAdapter(name), PrintAttributes.Builder().build())
+        }
+        v.addJavascriptInterface(PrintHook(v, go), "ZodPrint")
+        if (docStart) WebViewCompat.addDocumentStartJavaScript(v, "window.print=function(){try{ZodPrint.print()}catch(e){}};", setOf(ORIGIN_RULE))
+        v.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String?) { view.postDelayed(go, 2500) }
+        }
+        v.loadUrl(url)
+    }
+
+    class PrintHook(private val v: WebView, private val go: Runnable) {
+        @JavascriptInterface
+        fun print() { v.post(go) }
     }
 
     private fun download(url: String, ua: String?, disposition: String?, mime: String?) {
